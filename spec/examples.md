@@ -3,7 +3,14 @@
 ## Example Spotify URI
 
 ```text
+apparat - glimmerine
 spotify:track:23dfqX3nRspRfHtVgOVU95
+
+nin - aaaynmtb
+spotify:track:06USX1htQD4LgOgX4FF0ix
+
+lichterkinder - körperteil blues
+spotify:track:3wECJLFkS6cGvdyVOmGFme
 ```
 
 ## One-Time Refresh Token Flow
