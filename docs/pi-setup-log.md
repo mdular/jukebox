@@ -102,17 +102,23 @@ Observed after reboot:
 - the jukebox journal showed `[BOOT]` followed by `[READY] waiting for scan input`
 - the service no longer entered a restart loop when Spotify's device list was empty
 - the Spotify Web API `/me/player/devices` snapshot still returned `device_count: 0` immediately after boot
+- the cached Spotify device ID stayed the same across reboot, so this was not a changing-device-id problem
+- direct-target playback attempts and transfer-playback retries against that stable device ID still failed with HTTP `404`
 
 Observed after manual activation from the phone:
 
+- `raspotify` connected to Spotify's access point and authenticated only after the phone selected the receiver
 - `jukebox` appeared in `/me/player/devices`
 - Spotify reported `jukebox` as an active `Speaker`
+- playback from the jukebox app started working reliably again
 
 Interpretation:
 
 - reboot-to-ready behavior is now validated for the jukebox service itself
 - immediate post-boot receiver visibility through Spotify's Web API is still not reliable on this Pi
 - manual activation from a Spotify client is still required before the receiver becomes visible to the Web API
+- the remaining reboot gap is receiver activation on the Spotify/`raspotify` side, not scanner input handling inside the jukebox app
+- stable reboot into autonomous playback should be treated as EPIC 3 hardening work
 
 ## Current Validation Status
 
@@ -123,8 +129,10 @@ Confirmed working on this Pi:
 - the physical QR scanner is readable through the configured `evdev` path
 - end-to-end card scanning now works after fixing shifted `:` and uppercase handling in the `evdev` adapter
 - clean reboot validation now returns the jukebox service to a stable ready state without a restart loop
+- cardboard-prototype handling has been validated with successful real card scans during family testing
 
 Not yet completed or not yet reliable on this Pi:
 
 - immediate post-boot receiver visibility in Spotify's Web API
 - playback still depends on the receiver becoming visible to Spotify after manual activation
+- autonomous receiver activation after reboot without using another Spotify client

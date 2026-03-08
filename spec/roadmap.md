@@ -72,13 +72,14 @@ Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playbac
 - The scanner is readable on-device and produces the expected payload format.
 - The controller service can translate a real scan into playback on the configured Spotify receiver.
 - Audio plays through the external speaker path with acceptable baseline reliability for concept validation.
-- A clean reboot returns the device to a state where another scan can trigger playback again.
+- A clean reboot returns the device to a stable service-ready state, and any remaining receiver-activation gap is documented explicitly for the next EPIC.
 
 ### Outputs
 
 - A Raspberry Pi prototype that demonstrates the full V1 concept with real hardware in the loop.
 - A baseline setup procedure for Pi imaging, access, networking, audio, and playback service bring-up.
 - A clear list of issues that must be solved before the system can be considered appliance-like.
+- A recorded prototype finding that phone-side receiver activation is still required after reboot on the current `raspotify` path.
 
 ### Deferred Decisions
 
@@ -98,13 +99,14 @@ Turn the working Pi prototype into a stable, low-maintenance appliance candidate
 - Harden startup, restart, and recovery behavior for normal family use.
 - Define the expected service supervision model for the controller and playback stack.
 - Improve resilience around power loss, reboots, and network reconnection.
+- Remove prototype-only receiver activation steps such as waking playback from another Spotify client after reboot.
 - Formalize system feedback for idle, scan, playback success, and recoverable error states.
 - Add the hardware-adjacent checkpoints needed to support enclosure integration, including scanner mounting assumptions, cable routing, power access, and serviceability.
 - Capture the minimum operational guidance required to keep the device maintainable after assembly.
 
 ### Validation Focus
 
-- Repeated reboot and power-cycle tests return the device to a usable state without manual recovery.
+- Repeated reboot and power-cycle tests return the device to a usable scan-to-playback state without manual recovery or phone-side receiver activation.
 - Expected network interruptions recover cleanly enough for normal household use.
 - Failure states are observable and distinguishable enough to support quick diagnosis.
 - The software and Pi setup no longer depend on fragile development-only steps.
