@@ -1,0 +1,19 @@
+# Scaffold systemd unit for the future jukebox daemon.
+# The current application only initializes logging and exits.
+
+[Unit]
+Description=Jukebox controller scaffold
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/jukebox
+EnvironmentFile=/etc/jukebox/jukebox.env
+ExecStart=/opt/jukebox/.venv/bin/python -m jukebox
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
