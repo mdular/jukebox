@@ -39,6 +39,52 @@ ssh pi@jukebox.local
 
 If mDNS is unavailable on your network, use the Pi's DHCP-assigned IP address instead.
 
+## 2a. Optional: Configure SSH Key Authentication
+
+If you will be running repeated `ssh`, `scp`, or Pi helper script commands from your development machine, set up SSH key-based auth once so the Pi account password prompts stop.
+
+Generate a dedicated key locally if you do not already have one you want to reuse:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/jukebox_pi -C "jukebox-pi"
+```
+
+Install the public key on the Pi.
+If `ssh-copy-id` is available on your machine:
+
+```sh
+ssh-copy-id -i ~/.ssh/jukebox_pi.pub pi@jukebox.local
+```
+
+If `ssh-copy-id` is not available, append the key manually:
+
+```sh
+cat ~/.ssh/jukebox_pi.pub | ssh pi@jukebox.local "umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; cat >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys"
+```
+
+To make the key apply automatically for this host, add a matching host entry to your local `~/.ssh/config`:
+
+```sshconfig
+Host jukebox.local
+  IdentityFile ~/.ssh/jukebox_pi
+  IdentitiesOnly yes
+  AddKeysToAgent yes
+```
+
+If your local SSH agent is not already loading that key, add it once:
+
+```sh
+ssh-add ~/.ssh/jukebox_pi
+```
+
+Then verify that passwordless login works:
+
+```sh
+ssh pi@jukebox.local 'hostname'
+```
+
+After this, the same key-based auth should also be used by `scp` and by the repo's Pi helper scripts because they already call the normal local `ssh`/`scp` clients.
+
 ## 3. Install Baseline Packages
 
 Update the Pi and install the runtime prerequisites:

@@ -17,10 +17,18 @@ Expected remote checks:
 
 - `raspotify.service` is active
 - `jukebox.service` is active
+- recent `journalctl -u raspotify.service` output is readable
 - recent `journalctl -u jukebox.service` output is readable
+- the current Spotify Web API `/me/player/devices` snapshot is readable
 - a one-shot stdin replay confirms playback start on the configured target device
 
 If the smoke URI succeeds but the physical speaker stays silent, that is a USB-audio path or hardware issue, not a proof that the Spotify control path failed.
+
+Interpret the remote device snapshot carefully:
+
+- If `raspotify.service` is active but `target_visible` is `false`, the receiver process is up but the Spotify Web API still does not see the configured target device.
+- If the device list is empty until an official Spotify client is opened, that points to a receiver-registration or discovery problem rather than a scanner problem.
+- If `target_visible` becomes `true` only after manually connecting to `jukebox` from a phone or desktop app, record that explicitly before changing the app code. That distinction matters because it separates a boot-time race from a deeper receiver-visibility problem.
 
 ## Manual Scanner Validation
 
@@ -63,7 +71,9 @@ After reboot:
 
 1. `raspotify.service` must be active.
 2. `jukebox.service` must be active.
-3. The journal should show the boot and ready states without startup probe failures.
-4. A fresh physical card scan should still trigger playback.
+3. `journalctl -u raspotify.service -n 50 --no-pager` should not show an obvious receiver startup failure.
+4. The Spotify Web API device snapshot should show whether `jukebox` is visible without opening another Spotify client first.
+5. The jukebox journal should show the boot and ready states without startup probe failures.
+6. A fresh physical card scan should still trigger playback.
 
 If the reboot test has not been run yet on the current prototype, record that explicitly in the setup log rather than leaving the status implicit.
