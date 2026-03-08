@@ -91,6 +91,29 @@ Result:
 - `raspotify` started sending audio to the USB sound card correctly
 - Spotify playback became audible through the external speaker
 
+## Clean Reboot Validation
+
+Validated on 2026-03-08.
+
+Observed after reboot:
+
+- `raspotify.service` reached `active`
+- `jukebox.service` reached `active`
+- the jukebox journal showed `[BOOT]` followed by `[READY] waiting for scan input`
+- the service no longer entered a restart loop when Spotify's device list was empty
+- the Spotify Web API `/me/player/devices` snapshot still returned `device_count: 0` immediately after boot
+
+Observed after manual activation from the phone:
+
+- `jukebox` appeared in `/me/player/devices`
+- Spotify reported `jukebox` as an active `Speaker`
+
+Interpretation:
+
+- reboot-to-ready behavior is now validated for the jukebox service itself
+- immediate post-boot receiver visibility through Spotify's Web API is still not reliable on this Pi
+- manual activation from a Spotify client is still required before the receiver becomes visible to the Web API
+
 ## Current Validation Status
 
 Confirmed working on this Pi:
@@ -99,7 +122,9 @@ Confirmed working on this Pi:
 - USB audio playback works through the external speaker after the `/etc/asound.conf` fix
 - the physical QR scanner is readable through the configured `evdev` path
 - end-to-end card scanning now works after fixing shifted `:` and uppercase handling in the `evdev` adapter
+- clean reboot validation now returns the jukebox service to a stable ready state without a restart loop
 
 Not yet completed or not yet reliable on this Pi:
 
-- clean reboot validation after deployment
+- immediate post-boot receiver visibility in Spotify's Web API
+- playback still depends on the receiver becoming visible to Spotify after manual activation

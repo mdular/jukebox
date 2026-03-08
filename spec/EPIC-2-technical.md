@@ -159,7 +159,6 @@ All Pi-specific behavior lives in adapters, startup checks, scripts, and documen
 7. `main.py` performs startup probes:
    - open the configured scanner device
    - authenticate to Spotify
-   - confirm that the configured `raspotify` target device is visible
 8. If startup probes fail for a transient reason, the process exits with code `1` and `systemd` retries it.
 9. If configuration is invalid, the process exits with code `2` and `systemd` does not loop forever on the bad config.
 10. Once probes pass, the process emits a ready/idle event and waits for scans.
@@ -303,7 +302,7 @@ EPIC 2 should continue using [adapters/playback_spotify.py](/Users/markus/Worksp
 
 New responsibilities:
 
-- resolve the configured `raspotify` receiver device before a scan is accepted as playable
+- resolve the configured `raspotify` receiver device when a scan is dispatched
 - dispatch the play request to that target
 - confirm that playback actually started on the expected device
 
@@ -323,7 +322,7 @@ Backend rules:
 
 - if `JUKEBOX_SPOTIFY_DEVICE_ID` is set, use it directly
 - otherwise, call Spotify's devices endpoint and resolve the target by exact device name
-- if no matching device is visible, fail with a dedicated `spotify_target_device_unavailable` reason code
+- if no matching device is visible when dispatch runs, fail with a dedicated `spotify_target_device_unavailable` reason code
 
 This is a better fit for `raspotify`, because the receiver name can be controlled and documented even when the underlying Spotify device ID is not convenient to manage manually.
 
@@ -599,7 +598,6 @@ Return code policy:
 Transient startup failures include:
 
 - scanner device missing or unreadable
-- `raspotify` target device not yet visible
 - Spotify auth transport failure during startup probe
 
 Configuration failures include:
@@ -636,7 +634,7 @@ The controller should continue processing future scans after these failures.
 
 ## Open Risks
 
-- `raspotify` registration timing may be slower than expected on some boots, increasing dependence on `systemd` retry timing.
+- the Spotify Web API may not list a dormant `raspotify` receiver until a client activates it, so boot-time device visibility is not a reliable readiness gate.
 - Scanner key mapping can vary across devices and keyboard-layout assumptions; the adapter and docs should stay explicit about the expected keyboard-wedge behavior.
 - Spotify Connect control and playback confirmation still depend on Premium account behavior and the same account seeing the Pi receiver.
 - Analog Pi output quality may still force the documented USB audio exception path on some hardware.

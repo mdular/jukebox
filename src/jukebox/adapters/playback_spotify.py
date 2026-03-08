@@ -65,21 +65,16 @@ class SpotifyPlaybackBackend:
         self._sleeper = time.sleep if sleeper is None else sleeper
 
     def probe(self) -> PlaybackResult:
-        """Validate Spotify auth and target-device visibility."""
+        """Validate Spotify auth for startup checks."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
             return access_token_or_error
 
-        target_device_or_error = self._resolve_target_device(access_token_or_error)
-        if isinstance(target_device_or_error, PlaybackResult):
-            return target_device_or_error
-
         return PlaybackResult(
             ok=True,
             backend="spotify",
-            message="Spotify receiver available.",
-            device_name=target_device_or_error.name,
+            message="Spotify authentication available.",
         )
 
     def dispatch(self, request: PlaybackRequest) -> PlaybackResult:

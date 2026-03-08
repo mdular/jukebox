@@ -15,16 +15,8 @@ from jukebox.core.models import PlaybackRequest, SpotifyUri, SpotifyUriKind
 
 
 class SpotifyPlaybackBackendTests(unittest.TestCase):
-    def test_probe_resolves_target_device_by_name(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
-                ),
-            ]
-        )
+    def test_probe_only_validates_authentication(self) -> None:
+        requester = _SequenceRequester([_FakeResponse(200, {"access_token": "access-token"})])
         backend = SpotifyPlaybackBackend(
             client_id="client-id",
             client_secret="client-secret",
@@ -36,13 +28,10 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         result = backend.probe()
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.device_name, "jukebox")
-        token_request, devices_request = requester.requests
+        self.assertEqual(result.message, "Spotify authentication available.")
+        token_request = requester.requests[0]
         self.assertEqual(token_request.full_url, "https://accounts.spotify.com/api/token")
-        self.assertEqual(
-            devices_request.full_url,
-            "https://api.spotify.com/v1/me/player/devices",
-        )
+        self.assertEqual(len(requester.requests), 1)
 
     def test_track_dispatch_uses_uri_list_payload_and_confirms_playback(self) -> None:
         requester = _SequenceRequester(
@@ -165,16 +154,8 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.reason_code, "spotify_start_not_confirmed")
 
-    def test_probe_returns_target_device_unavailable_when_receiver_missing(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "other-device", "name": "kitchen", "is_active": True}]},
-                ),
-            ]
-        )
+    def test_probe_succeeds_when_receiver_is_not_yet_visible(self) -> None:
+        requester = _SequenceRequester([_FakeResponse(200, {"access_token": "access-token"})])
         backend = SpotifyPlaybackBackend(
             client_id="client-id",
             client_secret="client-secret",
@@ -185,8 +166,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
 
         result = backend.probe()
 
-        self.assertFalse(result.ok)
-        self.assertEqual(result.reason_code, "spotify_target_device_unavailable")
+        self.assertTrue(result.ok)
 
     def test_http_404_maps_to_no_active_device(self) -> None:
         requester = _SequenceRequester(
