@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Mapping, TextIO
+from typing import Callable, Mapping, TextIO
 
 from .adapters.feedback import TerminalStatusSink
 from .adapters.input import ReadableInput, ScanLineReader
-from .adapters.playback_spotify import SpotifyPlaybackBackend
-from .adapters.playback_stub import StubPlaybackBackend
 from .config import ConfigError, Settings, from_env
 from .core.controller import Controller
 from .core.deduper import DuplicateGate
-from .core.models import PlaybackBackend
+from .core.models import ControllerEvent, EventSink
 from .logging import StructuredEventLogger, configure_logging
+from .runtime import RuntimeDependencies, StartupError, build_runtime
 
 LOGGER = logging.getLogger("jukebox.main")
+RuntimeFactory = Callable[[Settings, ReadableInput], RuntimeDependencies]
 
 
 def main(
@@ -25,6 +25,7 @@ def main(
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     env: Mapping[str, str] | None = None,
+    runtime_factory: RuntimeFactory | None = None,
 ) -> int:
     """Load configuration, run the controller loop, and return an exit code."""
 
@@ -45,22 +46,38 @@ def main(
         stream=error_stream,
     )
 
+    event_sinks: list[EventSink] = [TerminalStatusSink(output_stream), StructuredEventLogger()]
+    _emit_event(event_sinks, ControllerEvent(code="booting", message="waiting for scanner and receiver"))
+
     try:
-        playback_backend = _build_playback_backend(settings)
+        runtime = (build_runtime if runtime_factory is None else runtime_factory)(settings, input_stream)
+    except StartupError as exc:
+        _emit_event(
+            event_sinks,
+            ControllerEvent(
+                code=exc.code,
+                message=exc.message,
+                backend=exc.backend,
+                reason_code=exc.reason_code,
+                device_name=exc.device_name,
+                source=exc.source,
+            ),
+        )
+        return 1
     except Exception as exc:
         print(f"Startup error: {exc}", file=error_stream)
         return 1
 
     controller = Controller(
-        playback_backend=playback_backend,
+        playback_backend=runtime.playback_backend,
         duplicate_gate=DuplicateGate(window_seconds=settings.duplicate_window_seconds),
-        event_sinks=[TerminalStatusSink(output_stream), StructuredEventLogger()],
+        event_sinks=event_sinks,
     )
-    controller.emit_idle()
+    controller.emit_ready(source=runtime.source)
     LOGGER.info("jukebox controller started", extra={"backend": settings.playback_backend})
 
     try:
-        for line in ScanLineReader(input_stream):
+        for line in ScanLineReader(runtime.input_stream):
             controller.process_line(line)
     except KeyboardInterrupt:
         LOGGER.info("jukebox controller interrupted")
@@ -69,15 +86,6 @@ def main(
     return 0
 
 
-def _build_playback_backend(settings: Settings) -> PlaybackBackend:
-    if settings.playback_backend == "spotify":
-        assert settings.spotify_client_id is not None
-        assert settings.spotify_client_secret is not None
-        assert settings.spotify_refresh_token is not None
-        return SpotifyPlaybackBackend(
-            client_id=settings.spotify_client_id,
-            client_secret=settings.spotify_client_secret,
-            refresh_token=settings.spotify_refresh_token,
-            device_id=settings.spotify_device_id,
-        )
-    return StubPlaybackBackend()
+def _emit_event(event_sinks: list[EventSink], event: ControllerEvent) -> None:
+    for sink in event_sinks:
+        sink.handle(event)

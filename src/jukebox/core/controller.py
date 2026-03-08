@@ -28,6 +28,11 @@ class Controller:
 
         self._emit(ControllerEvent(code="idle", message="waiting for scan input"))
 
+    def emit_ready(self, *, source: str | None = None) -> None:
+        """Emit the scan-ready state."""
+
+        self._emit(ControllerEvent(code="ready", message="waiting for scan input", source=source))
+
     def process_line(self, raw_line: str) -> None:
         """Process one raw input line."""
 
@@ -90,6 +95,7 @@ class Controller:
                     payload=payload,
                     uri_kind=uri.kind,
                     backend=result.backend,
+                    device_name=result.device_name,
                 )
             )
             return
@@ -102,6 +108,7 @@ class Controller:
                 uri_kind=uri.kind,
                 backend=result.backend,
                 reason_code=result.reason_code,
+                device_name=result.device_name,
             )
         )
 

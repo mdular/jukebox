@@ -32,6 +32,7 @@ class PlaybackResult:
     backend: str
     reason_code: str | None = None
     message: str | None = None
+    device_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,10 +45,15 @@ class ControllerEvent:
     uri_kind: str | None = None
     backend: str | None = None
     reason_code: str | None = None
+    device_name: str | None = None
+    source: str | None = None
 
 
 class PlaybackBackend(Protocol):
     """Playback adapter contract."""
+
+    def probe(self) -> PlaybackResult:
+        """Probe backend readiness for startup checks."""
 
     def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
         """Dispatch the requested playback action."""

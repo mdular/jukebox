@@ -24,7 +24,7 @@ This technical design assumes the checked decisions and notes in [spec/EPIC-2-re
 - A clean boot must return the Pi to scan-ready state through the documented V1 startup path.
 - Scanner binding must be consistent across reboots.
 - EPIC 2 does not include LED work.
-- The baseline audio path is the Pi 3.5 mm analog output, with USB audio only documented as an exception path if analog output is unusable.
+- The baseline audio path is a USB sound card on the Pi, with the 3.5 mm analog output documented only as a fallback troubleshooting path.
 - Playback success requires both software-visible confirmation and audible playback, with the test stack able to confirm playback start without relying on human hearing alone.
 - EPIC 1 scan semantics stay in place on the Pi unless a Pi-specific issue forces an explicit exception.
 - Deployment and reboot validation should be scriptable over SSH/SCP for the agent workflow, but not fully automated from SD imaging onward.
@@ -125,7 +125,7 @@ USB HID scanner
 
 raspotify.service
   -> Spotify Connect receiver on the Pi
-  -> ALSA analog output
+  -> ALSA USB audio output
   -> external powered speaker
 
 systemd
@@ -239,7 +239,7 @@ It keeps controller logic and adapter logic separate while giving `main.py` a th
 - `docs/pi-deploy.md`
   Purpose: SSH/SCP-based agent-friendly deployment workflow.
 - `docs/pi-validation.md`
-  Purpose: scanner test, playback confirmation test, analog-audio check, and clean-reboot checklist.
+  Purpose: scanner test, playback confirmation test, USB-audio check, and clean-reboot checklist.
 
 ## Input Design
 
@@ -358,10 +358,10 @@ The Python app does not own audio routing.
 EPIC 2 keeps audio concerns outside the application code:
 
 - `raspotify` renders audio
-- Raspberry Pi OS and ALSA decide the actual analog output target
-- docs capture the setup and troubleshooting steps for forcing or verifying 3.5 mm output
+- Raspberry Pi OS and ALSA decide the actual USB audio target
+- docs capture the setup and troubleshooting steps for selecting and verifying USB output
 
-If analog output proves unusable, the exception is documented in `docs/pi-validation.md` and `docs/pi-setup.md`.
+The Pi's analog output remains documented only as a fallback troubleshooting path in `docs/pi-validation.md` and `docs/pi-setup.md`.
 No app-level audio-path switch is added in EPIC 2.
 
 ## Configuration Design
@@ -526,11 +526,11 @@ Structured JSON logging should add `device_name` and `source` when available.
 Operational docs should move under a new `docs/` directory:
 
 - `docs/pi-setup.md`
-  Covers Raspberry Pi OS Lite imaging, Wi-Fi, SSH, required packages, `raspotify` installation, analog-output configuration, scanner path discovery, and service env file setup.
+  Covers Raspberry Pi OS Lite imaging, Wi-Fi, SSH, required packages, `raspotify` installation, USB-audio configuration, scanner path discovery, and service env file setup.
 - `docs/pi-deploy.md`
   Covers SSH/SCP deployment scripts, expected remote layout, and service update flow.
 - `docs/pi-validation.md`
-  Covers physical scanner validation, one-shot remote playback smoke tests, analog-speaker check, and clean-reboot checklist.
+  Covers physical scanner validation, one-shot remote playback smoke tests, USB-speaker check, and clean-reboot checklist.
 
 README changes:
 
@@ -580,7 +580,7 @@ This gives the agent a repeatable, non-physical smoke test for deployment correc
 Manual checks remain necessary for:
 
 - real physical QR card scan through the mounted scanner
-- audible analog output through the external powered speaker
+- audible USB audio output through the external powered speaker
 - confirming that the physical setup matches the documented scanner path and speaker connection
 
 EPIC 2 should document these as manual smoke steps, not pretend they can be fully automated from the repo alone.

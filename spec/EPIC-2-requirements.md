@@ -83,11 +83,11 @@ The concept includes a V1 status LED, but the roadmap explicitly defers final LE
 
 ### D-7 Audio Output Validation Policy
 
-The concept fixes the V1 audio baseline to the Pi audio output and allows a USB sound card only as a contingency if analog noise is unacceptable.
+The concept now fixes the V1 audio baseline to a USB sound card on the Pi because the analog output path proved too noisy during bring-up.
 
 - [ ] EPIC 2 requires only the Pi 3.5 mm analog output path
-- [x] EPIC 2 requires the Pi 3.5 mm analog output path as the default and documents a USB sound card fallback only if analog noise makes validation unusable. (Recommended)
-- [ ] EPIC 2 requires a USB sound card as the baseline V1 audio path
+- [ ] EPIC 2 requires the Pi 3.5 mm analog output path as the default and documents a USB sound card fallback only if analog noise makes validation unusable.
+- [x] EPIC 2 requires a USB sound card as the baseline V1 audio path
 
 ### D-8 Playback Proof Threshold
 
@@ -221,9 +221,9 @@ The EPIC 2 prototype shall use the V1 external-speaker audio path defined by the
 Requirements:
 
 - Audio playback shall be validated through an external powered speaker connected to the Raspberry Pi audio output path.
-- The baseline EPIC 2 success target shall use the Pi 3.5 mm analog output path.
-- If analog output quality is poor enough to block meaningful validation, the issue shall be documented clearly rather than silently worked around.
-- Any USB sound card fallback used during EPIC 2 shall be treated as a documented exception to the baseline, not as an undeclared change in product direction.
+- The baseline EPIC 2 success target shall use a USB sound card connected to the Pi.
+- The setup and validation flow shall include a concrete way to confirm the selected USB audio output path before blaming the playback service.
+- The Pi's 3.5 mm analog output may remain documented only as a fallback troubleshooting path, not as the baseline success target.
 
 Related decision: `D-7 Audio Output Validation Policy`.
 
@@ -439,10 +439,10 @@ This determines whether the observable states used in EPIC 2 should become the b
 
 ### H-4 V1 Audio Baseline Stability
 
-This determines whether the analog audio path remains the V1 baseline after Pi bring-up or whether EPIC 3 must treat audio hardware changes as required.
+This determines whether the USB audio path becomes the stable V1 baseline after Pi bring-up or whether EPIC 3 should revisit audio hardware again.
 
-- [ ] Keep the Pi analog audio path as the V1 baseline unless EPIC 2 uncovered a blocking issue. (Recommended)
-- [ ] Promote USB audio hardware to required V1 baseline
+- [ ] Keep the Pi analog audio path as the V1 baseline unless EPIC 2 uncovered a blocking issue.
+- [x] Promote USB audio hardware to required V1 baseline
 - [ ] Decide later
 
 ## Notes

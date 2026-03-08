@@ -48,6 +48,8 @@ class ConfigureLoggingTests(unittest.TestCase):
                 uri_kind="track",
                 backend="spotify",
                 reason_code="spotify_no_active_device",
+                device_name="jukebox",
+                source="evdev",
             )
         )
 
@@ -57,3 +59,5 @@ class ConfigureLoggingTests(unittest.TestCase):
         self.assertEqual(payload["uri_kind"], "track")
         self.assertEqual(payload["backend"], "spotify")
         self.assertEqual(payload["reason_code"], "spotify_no_active_device")
+        self.assertEqual(payload["device_name"], "jukebox")
+        self.assertEqual(payload["source"], "evdev")

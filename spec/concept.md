@@ -149,12 +149,12 @@ Ensure consistent QR positioning and minimize glare.
 ## V1 Audio
 
 Temporary output:
-3.5 mm analog output from Raspberry Pi
+USB sound card connected to the Raspberry Pi
 
 External powered speaker connected via cable exiting rear panel.
 
 Optional upgrade:
-USB sound card if analog output noise is unacceptable.
+Use the Pi's 3.5 mm analog output only as a fallback troubleshooting path if the USB card is unavailable.
 
 ---
 

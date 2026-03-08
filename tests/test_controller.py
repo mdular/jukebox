@@ -10,7 +10,9 @@ from jukebox.core.models import ControllerEvent, PlaybackRequest, PlaybackResult
 class ControllerTests(unittest.TestCase):
     def test_valid_scan_is_accepted_and_dispatched(self) -> None:
         sink = _RecordingSink()
-        backend = _RecordingBackend([PlaybackResult(ok=True, backend="stub", message="played")])
+        backend = _RecordingBackend(
+            [PlaybackResult(ok=True, backend="stub", message="played", device_name="jukebox")]
+        )
         controller = Controller(
             playback_backend=backend,
             duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([10.0])),
@@ -24,6 +26,7 @@ class ControllerTests(unittest.TestCase):
             ["scan_received", "scan_accepted", "playback_dispatch_succeeded"],
         )
         self.assertEqual(backend.requests[0].uri.kind, "track")
+        self.assertEqual(sink.events[-1].device_name, "jukebox")
 
     def test_invalid_payload_emits_error_and_does_not_dispatch(self) -> None:
         sink = _RecordingSink()

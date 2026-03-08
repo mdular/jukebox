@@ -8,28 +8,42 @@ from typing import Final, Literal, Mapping, Optional
 
 LogFormat = Literal["console", "json"]
 PlaybackBackendName = Literal["stub", "spotify"]
+InputBackendName = Literal["stdin", "evdev"]
 
 JUKEBOX_ENV: Final[str] = "JUKEBOX_ENV"
 JUKEBOX_LOG_LEVEL: Final[str] = "JUKEBOX_LOG_LEVEL"
 JUKEBOX_LOG_FORMAT: Final[str] = "JUKEBOX_LOG_FORMAT"
 JUKEBOX_PLAYBACK_BACKEND: Final[str] = "JUKEBOX_PLAYBACK_BACKEND"
 JUKEBOX_DUPLICATE_WINDOW_SECONDS: Final[str] = "JUKEBOX_DUPLICATE_WINDOW_SECONDS"
+JUKEBOX_INPUT_BACKEND: Final[str] = "JUKEBOX_INPUT_BACKEND"
+JUKEBOX_SCANNER_DEVICE: Final[str] = "JUKEBOX_SCANNER_DEVICE"
 JUKEBOX_SPOTIFY_CLIENT_ID: Final[str] = "JUKEBOX_SPOTIFY_CLIENT_ID"
 JUKEBOX_SPOTIFY_CLIENT_SECRET: Final[str] = "JUKEBOX_SPOTIFY_CLIENT_SECRET"
 JUKEBOX_SPOTIFY_REFRESH_TOKEN: Final[str] = "JUKEBOX_SPOTIFY_REFRESH_TOKEN"
 JUKEBOX_SPOTIFY_DEVICE_ID: Final[str] = "JUKEBOX_SPOTIFY_DEVICE_ID"
+JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME: Final[str] = "JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME"
+JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[str] = (
+    "JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS"
+)
+JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[str] = (
+    "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS"
+)
 
 DEFAULT_ENV: Final[str] = "development"
 DEFAULT_LOG_LEVEL: Final[str] = "INFO"
 DEFAULT_LOG_FORMAT: Final[LogFormat] = "console"
 DEFAULT_PLAYBACK_BACKEND: Final[PlaybackBackendName] = "stub"
 DEFAULT_DUPLICATE_WINDOW_SECONDS: Final[float] = 2.0
+DEFAULT_INPUT_BACKEND: Final[InputBackendName] = "stdin"
+DEFAULT_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[float] = 5.0
+DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[float] = 0.25
 
 _ALLOWED_LOG_LEVELS: Final[frozenset[str]] = frozenset(
     {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
 )
 _ALLOWED_LOG_FORMATS: Final[frozenset[str]] = frozenset({"console", "json"})
 _ALLOWED_PLAYBACK_BACKENDS: Final[frozenset[str]] = frozenset({"stub", "spotify"})
+_ALLOWED_INPUT_BACKENDS: Final[frozenset[str]] = frozenset({"stdin", "evdev"})
 
 
 class ConfigError(ValueError):
@@ -45,10 +59,15 @@ class Settings:
     log_format: LogFormat
     playback_backend: PlaybackBackendName
     duplicate_window_seconds: float
+    input_backend: InputBackendName
+    scanner_device: str | None
     spotify_client_id: str | None
     spotify_client_secret: str | None
     spotify_refresh_token: str | None
     spotify_device_id: str | None
+    spotify_target_device_name: str | None
+    spotify_confirm_timeout_seconds: float
+    spotify_confirm_poll_interval_seconds: float
 
 
 def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
@@ -60,20 +79,38 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
     log_format = _read_log_format(source)
     playback_backend = _read_playback_backend(source)
     duplicate_window_seconds = _read_duplicate_window_seconds(source)
+    input_backend = _read_input_backend(source)
+    scanner_device = _read_optional_value(source, JUKEBOX_SCANNER_DEVICE)
     spotify_client_id = _read_optional_value(source, JUKEBOX_SPOTIFY_CLIENT_ID)
     spotify_client_secret = _read_optional_value(source, JUKEBOX_SPOTIFY_CLIENT_SECRET)
     spotify_refresh_token = _read_optional_value(source, JUKEBOX_SPOTIFY_REFRESH_TOKEN)
     spotify_device_id = _read_optional_value(source, JUKEBOX_SPOTIFY_DEVICE_ID)
+    spotify_target_device_name = _read_optional_value(source, JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME)
+    spotify_confirm_timeout_seconds = _read_positive_float(
+        source,
+        JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS,
+        default=DEFAULT_SPOTIFY_CONFIRM_TIMEOUT_SECONDS,
+    )
+    spotify_confirm_poll_interval_seconds = _read_positive_float(
+        source,
+        JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS,
+        default=DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS,
+    )
     settings = Settings(
         environment=environment,
         log_level=log_level,
         log_format=log_format,
         playback_backend=playback_backend,
         duplicate_window_seconds=duplicate_window_seconds,
+        input_backend=input_backend,
+        scanner_device=scanner_device,
         spotify_client_id=spotify_client_id,
         spotify_client_secret=spotify_client_secret,
         spotify_refresh_token=spotify_refresh_token,
         spotify_device_id=spotify_device_id,
+        spotify_target_device_name=spotify_target_device_name,
+        spotify_confirm_timeout_seconds=spotify_confirm_timeout_seconds,
+        spotify_confirm_poll_interval_seconds=spotify_confirm_poll_interval_seconds,
     )
     _validate_backend_settings(settings)
     return settings
@@ -127,18 +164,38 @@ def _read_playback_backend(source: Mapping[str, str]) -> PlaybackBackendName:
 
 
 def _read_duplicate_window_seconds(source: Mapping[str, str]) -> float:
-    raw_value = source.get(JUKEBOX_DUPLICATE_WINDOW_SECONDS)
+    return _read_positive_float(
+        source,
+        JUKEBOX_DUPLICATE_WINDOW_SECONDS,
+        default=DEFAULT_DUPLICATE_WINDOW_SECONDS,
+    )
+
+
+def _read_input_backend(source: Mapping[str, str]) -> InputBackendName:
+    raw_value = source.get(JUKEBOX_INPUT_BACKEND)
     if raw_value is None:
-        return DEFAULT_DUPLICATE_WINDOW_SECONDS
+        return DEFAULT_INPUT_BACKEND
+
+    value = raw_value.strip().lower()
+    if value not in _ALLOWED_INPUT_BACKENDS:
+        allowed = ", ".join(sorted(_ALLOWED_INPUT_BACKENDS))
+        raise ConfigError(f"{JUKEBOX_INPUT_BACKEND} must be one of: {allowed}.")
+    return value  # type: ignore[return-value]
+
+
+def _read_positive_float(source: Mapping[str, str], key: str, *, default: float) -> float:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return default
 
     value = raw_value.strip()
     try:
         parsed = float(value)
     except ValueError as exc:
-        raise ConfigError(f"{JUKEBOX_DUPLICATE_WINDOW_SECONDS} must be a positive float.") from exc
+        raise ConfigError(f"{key} must be a positive float.") from exc
 
     if parsed <= 0:
-        raise ConfigError(f"{JUKEBOX_DUPLICATE_WINDOW_SECONDS} must be a positive float.")
+        raise ConfigError(f"{key} must be a positive float.")
     return parsed
 
 
@@ -152,6 +209,11 @@ def _read_optional_value(source: Mapping[str, str], key: str) -> str | None:
 
 
 def _validate_backend_settings(settings: Settings) -> None:
+    if settings.input_backend == "evdev" and settings.scanner_device is None:
+        raise ConfigError(
+            f"{JUKEBOX_INPUT_BACKEND}=evdev requires {JUKEBOX_SCANNER_DEVICE}."
+        )
+
     if settings.playback_backend != "spotify":
         return
 
@@ -168,4 +230,19 @@ def _validate_backend_settings(settings: Settings) -> None:
         joined = ", ".join(missing)
         raise ConfigError(
             f"{JUKEBOX_PLAYBACK_BACKEND}=spotify requires these variables: {joined}."
+        )
+
+    if settings.spotify_device_id is None and settings.spotify_target_device_name is None:
+        raise ConfigError(
+            f"{JUKEBOX_PLAYBACK_BACKEND}=spotify requires either "
+            f"{JUKEBOX_SPOTIFY_DEVICE_ID} or {JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME}."
+        )
+
+    if (
+        settings.spotify_confirm_poll_interval_seconds
+        > settings.spotify_confirm_timeout_seconds
+    ):
+        raise ConfigError(
+            f"{JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS} must be less than or equal to "
+            f"{JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS}."
         )

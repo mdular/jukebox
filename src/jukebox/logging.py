@@ -9,7 +9,15 @@ from typing import Final, Optional, TextIO
 from .config import LogFormat
 from .core.models import ControllerEvent
 
-_EVENT_FIELDS: Final[tuple[str, ...]] = ("event", "payload", "uri_kind", "backend", "reason_code")
+_EVENT_FIELDS: Final[tuple[str, ...]] = (
+    "event",
+    "payload",
+    "uri_kind",
+    "backend",
+    "reason_code",
+    "device_name",
+    "source",
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -46,7 +54,7 @@ class StructuredEventLogger:
         """Log one controller event with structured metadata."""
 
         extra = {"event": event.code}
-        for key in ("payload", "uri_kind", "backend", "reason_code"):
+        for key in ("payload", "uri_kind", "backend", "reason_code", "device_name", "source"):
             value = getattr(event, key)
             if value is not None:
                 extra[key] = value

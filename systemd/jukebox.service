@@ -1,10 +1,7 @@
-# Scaffold systemd unit for the future jukebox daemon.
-# The current application only initializes logging and exits.
-
 [Unit]
-Description=Jukebox controller scaffold
-After=network-online.target
-Wants=network-online.target
+Description=Jukebox controller service
+After=network-online.target raspotify.service
+Wants=network-online.target raspotify.service
 
 [Service]
 Type=simple
@@ -14,6 +11,9 @@ EnvironmentFile=/etc/jukebox/jukebox.env
 ExecStart=/opt/jukebox/.venv/bin/python -m jukebox
 Restart=on-failure
 RestartSec=5
+RestartPreventExitStatus=2
+SupplementaryGroups=input
+StandardInput=null
 
 [Install]
 WantedBy=multi-user.target

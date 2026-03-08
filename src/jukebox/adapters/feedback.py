@@ -21,8 +21,16 @@ class TerminalStatusSink:
         self._stream.flush()
 
     def _render(self, event: ControllerEvent) -> str:
-        if event.code == "idle":
-            return "[IDLE] waiting for scan input"
+        if event.code == "booting":
+            return "[BOOT] waiting for scanner and receiver"
+        if event.code in {"idle", "ready"}:
+            return "[READY] waiting for scan input"
+        if event.code == "scanner_unavailable":
+            reason_code = event.reason_code or "error"
+            return f"[SCANNER] unavailable: {reason_code}"
+        if event.code == "receiver_unavailable":
+            reason_code = event.reason_code or "error"
+            return f"[RECEIVER] unavailable: {reason_code}"
         if event.code == "scan_received":
             return f"[SCAN] {event.payload}"
         if event.code == "scan_accepted":
@@ -33,7 +41,8 @@ class TerminalStatusSink:
             reason_code = event.reason_code or "error"
             return f"[ERROR {reason_code}] {event.message}"
         if event.code == "playback_dispatch_succeeded":
-            return f"[PLAYBACK {event.backend}] dispatched {event.uri_kind}"
+            device_fragment = f" on {event.device_name}" if event.device_name else ""
+            return f"[PLAYBACK {event.backend}] started {event.uri_kind}{device_fragment}"
         if event.code == "playback_dispatch_failed":
             reason_code = event.reason_code or "error"
             return f"[PLAYBACK {event.backend}] failed: {reason_code}"

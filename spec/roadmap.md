@@ -63,7 +63,7 @@ Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playbac
 - Establish the baseline Pi runtime environment, including networking and device access needed for the scanner and audio output.
 - Set up a Spotify Connect receiver on the Pi and confirm it can act as the playback target.
 - Run the controller service on the Pi and connect it to real USB scanner input.
-- Use the temporary V1 audio path with external powered speakers through the Pi audio output.
+- Use the temporary V1 audio path with an external powered speaker through the Pi's USB sound card.
 - Define the expected boot-to-ready path for the software stack at a basic V1 level.
 
 ### Validation Focus
@@ -155,7 +155,10 @@ Add refinement after the stable V1 appliance baseline exists, while keeping the 
 - automatic WiFi fallback network
 - OTA updates via git pull
 - read-only filesystem mode (very useful for appliance devices)
-- generator for the printer-friendly QR card sheets, using song metadata and artwork
+- generator for the printer-friendly QR card sheets, using song metadata and artwork. should convert spotify links into URI format.
+- cards for setup and stop actions
+- align scanner-ready lights/beeps with actual service readiness so the hardware does not appear ready before the jukebox services are usable
+- auto-shutdown after a long idle period, with a simple physical power-on to recover without needing to explain shutdown vs restart semantics to family members
 
 
 ### Deferred Decisions
