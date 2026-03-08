@@ -3,4 +3,8 @@ set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 
-exec make -C "$PROJECT_ROOT" PYTHON="${PYTHON:-python3}" venv
+if [ -n "${PYTHON:-}" ]; then
+  exec make -C "$PROJECT_ROOT" PYTHON="$PYTHON" venv
+fi
+
+exec make -C "$PROJECT_ROOT" venv

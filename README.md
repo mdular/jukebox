@@ -16,10 +16,10 @@ The repository currently contains project setup only. Scanner handling, Spotify 
 - `make`
 - A POSIX shell
 
-If you have multiple Python interpreters installed, select one explicitly:
+Bootstrap commands auto-detect a supported Python interpreter when possible. If none is available on `PATH`, rerun with an explicit interpreter:
 
 ```sh
-PYTHON=python3.11 make venv
+PYTHON=/path/to/python3.11 make venv
 ```
 
 ## Repository Layout
@@ -39,6 +39,8 @@ Create a virtual environment and install the package in editable mode with devel
 ```sh
 make venv
 ```
+
+`make venv` and `./scripts/bootstrap.sh` use the same interpreter resolution logic. They first honor `PYTHON` when it is set, otherwise they search common `python3.x` command names and fail with an actionable message if nothing compatible is found.
 
 Optional local environment file:
 
@@ -64,6 +66,13 @@ Utility wrappers are also available:
 ./scripts/bootstrap.sh
 ./scripts/run-local.sh
 ./scripts/check.sh
+```
+
+If your machine's default `python3` is older than 3.11, keep using the same commands and set `PYTHON` explicitly:
+
+```sh
+PYTHON=/path/to/python3.11 make venv
+PYTHON=/path/to/python3.11 ./scripts/bootstrap.sh
 ```
 
 ## Environment Variables

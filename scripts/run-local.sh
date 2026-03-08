@@ -2,16 +2,17 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+PYTHON_RESOLVER=$PROJECT_ROOT/scripts/resolve-python.sh
 
 if [ -n "${PYTHON:-}" ]; then
   PYTHON_BIN=$PYTHON
 elif [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
   PYTHON_BIN=$PROJECT_ROOT/.venv/bin/python
 else
-  PYTHON_BIN=python3
+  PYTHON_BIN=$("$PYTHON_RESOLVER")
 fi
 
-"$PYTHON_BIN" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3.11+ is required.")'
+PYTHON="$PYTHON_BIN" "$PYTHON_RESOLVER" >/dev/null
 
 if [ -f "$PROJECT_ROOT/.env" ]; then
   set -a

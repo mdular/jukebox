@@ -1,12 +1,13 @@
 SHELL := /bin/sh
 
-PYTHON ?= python3
+PYTHON ?=
 VENV ?= .venv
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 RUFF := $(VENV)/bin/ruff
 MYPY := $(VENV)/bin/mypy
 PYTEST := $(VENV)/bin/pytest
+PYTHON_RESOLVER := ./scripts/resolve-python.sh
 
 .DEFAULT_GOAL := help
 
@@ -24,12 +25,14 @@ help:
 		'  make clean      Remove local build and cache artifacts'
 
 python-check:
-	@$(PYTHON) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3.11+ is required.")'
+	@PYTHON="$(PYTHON)" "$(PYTHON_RESOLVER)" >/dev/null
 
-$(VENV_PYTHON): python-check
-	$(PYTHON) -m venv $(VENV)
-	$(VENV_PIP) install --upgrade pip
-	$(VENV_PIP) install -e '.[dev]'
+$(VENV_PYTHON):
+	@PYTHON_BIN="$$(PYTHON="$(PYTHON)" "$(PYTHON_RESOLVER)")"; \
+	printf '%s\n' "Using $$PYTHON_BIN"; \
+	"$$PYTHON_BIN" -m venv "$(VENV)"; \
+	"$(VENV_PIP)" install --upgrade pip; \
+	"$(VENV_PIP)" install -e '.[dev]'
 
 venv: $(VENV_PYTHON)
 
