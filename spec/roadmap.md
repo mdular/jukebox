@@ -150,6 +150,14 @@ Add refinement after the stable V1 appliance baseline exists, while keeping the 
 - A clear bridge from validated V1 behavior to the concept's V2 direction for audio and controls.
 - A labeled post-roadmap backlog for ideas that remain intentionally out of scope.
 
+### Parking lot for ideas
+
+- automatic WiFi fallback network
+- OTA updates via git pull
+- read-only filesystem mode (very useful for appliance devices)
+- generator for the printer-friendly QR card sheets, using song metadata and artwork
+
+
 ### Deferred Decisions
 
 - Detailed internal speaker selection, amplifier integration, and enclosure acoustics.
