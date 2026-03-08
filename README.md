@@ -1,8 +1,8 @@
 # Jukebox
 
-Technical scaffold for the Raspberry Pi QR card jukebox project.
+Local EPIC 1 implementation for the Raspberry Pi QR card jukebox project.
 
-The repository currently contains project setup only. Scanner handling, Spotify playback, controller logic, and GPIO support are intentionally not implemented yet.
+The repository now contains the line-based scan controller loop, strict Spotify URI parsing, duplicate suppression, terminal feedback, structured logging, a stub playback backend, and an optional Spotify playback backend. Raspberry Pi deployment and GPIO work are still intentionally out of scope here.
 
 ## Authoritative Specs
 
@@ -26,8 +26,8 @@ PYTHON=/path/to/python3.11 make venv
 
 ```text
 spec/           Project specifications
-src/jukebox/    Python package scaffold
-tests/          Automated test scaffold
+src/jukebox/    Application package
+tests/          Automated tests and replay fixtures
 scripts/        Local utility scripts
 systemd/        systemd unit scaffold
 ```
@@ -85,11 +85,53 @@ Current scaffold variables:
 
 Application-owned variables use the `JUKEBOX_` prefix. Future secrets must remain environment-driven and should only be added when required by the specs.
 
+EPIC 1 runtime variables:
+
+- `JUKEBOX_PLAYBACK_BACKEND`: `stub` or `spotify`, defaults to `stub`
+- `JUKEBOX_DUPLICATE_WINDOW_SECONDS`: positive float, defaults to `2.0`
+- `JUKEBOX_SPOTIFY_CLIENT_ID`: required when `JUKEBOX_PLAYBACK_BACKEND=spotify`
+- `JUKEBOX_SPOTIFY_CLIENT_SECRET`: required when `JUKEBOX_PLAYBACK_BACKEND=spotify`
+- `JUKEBOX_SPOTIFY_REFRESH_TOKEN`: required when `JUKEBOX_PLAYBACK_BACKEND=spotify`
+- `JUKEBOX_SPOTIFY_DEVICE_ID`: optional Spotify target device
+
+### Spotify Refresh Token
+
+For local Spotify playback tests, use a one-time authorization-code flow and the loopback callback below:
+
+```text
+http://127.0.0.1:8000/callback
+```
+
+The example auth URL and token exchange command live in [examples.md](/Users/markus/Workspace/jukebox/spec/examples.md).
+
+## Local Validation
+
+The controller consumes newline-terminated scan payloads from `stdin`. That supports both manual input and keyboard-wedge USB scanners without changing the core loop.
+
+Examples:
+
+```sh
+printf '%s\n' 'spotify:track:6rqhFgbbKwnb9MLmUQDhG6' | ./scripts/run-local.sh
+./scripts/run-local.sh < tests/fixtures/scan_streams/happy_path.txt
+JUKEBOX_PLAYBACK_BACKEND=spotify ./scripts/run-local.sh
+```
+
+Runtime behavior:
+
+- stdout shows terminal states such as `IDLE`, `SCAN`, `ACCEPTED`, `DUPLICATE`, and playback outcomes
+- stderr carries application logs according to `JUKEBOX_LOG_FORMAT`
+- EOF exits with status `0`
+- `Ctrl+C` exits with status `130`
+
 ## Runtime Notes
 
 - `python -m jukebox` is the canonical module entrypoint.
-- The current scaffold configures logging, emits one startup message, and exits successfully.
-- No Spotify authentication flow, scanner parsing, controller loop, or GPIO integration is included yet.
+- The application emits an initial idle state, then processes one scan per newline until EOF or interrupt.
+- Valid payloads are strict Spotify URIs for `track`, `album`, and `playlist`.
+- Duplicate suppression uses exact payload matching over the configured time window.
+- The default playback backend is the local stub backend.
+- The Spotify backend is optional and uses the Spotify Web API through environment-supplied credentials.
+- GPIO integration is still not included.
 
 ## systemd Scaffold
 
@@ -102,4 +144,4 @@ It currently assumes:
 - `ExecStart=/opt/jukebox/.venv/bin/python -m jukebox`
 - `EnvironmentFile=/etc/jukebox/jukebox.env`
 
-The unit is intentionally incomplete for production use because the application is not a long-running daemon yet.
+The unit remains intentionally incomplete for production use because Raspberry Pi deployment, environment placement, and service hardening are not finalized in this repo.

@@ -5,7 +5,8 @@ import json
 import logging
 import unittest
 
-from jukebox.logging import configure_logging
+from jukebox.core.models import ControllerEvent
+from jukebox.logging import StructuredEventLogger, configure_logging
 
 
 class ConfigureLoggingTests(unittest.TestCase):
@@ -33,3 +34,26 @@ class ConfigureLoggingTests(unittest.TestCase):
         self.assertIn("INFO", output)
         self.assertIn("jukebox.test.console", output)
         self.assertIn("console output", output)
+
+    def test_structured_event_logging_preserves_event_metadata(self) -> None:
+        stream = io.StringIO()
+        configure_logging(level="INFO", log_format="json", environment="test", stream=stream)
+
+        event_logger = StructuredEventLogger()
+        event_logger.handle(
+            ControllerEvent(
+                code="playback_dispatch_failed",
+                message="Spotify playback failed.",
+                payload="spotify:track:6rqhFgbbKwnb9MLmUQDhG6",
+                uri_kind="track",
+                backend="spotify",
+                reason_code="spotify_no_active_device",
+            )
+        )
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(payload["event"], "playback_dispatch_failed")
+        self.assertEqual(payload["payload"], "spotify:track:6rqhFgbbKwnb9MLmUQDhG6")
+        self.assertEqual(payload["uri_kind"], "track")
+        self.assertEqual(payload["backend"], "spotify")
+        self.assertEqual(payload["reason_code"], "spotify_no_active_device")
