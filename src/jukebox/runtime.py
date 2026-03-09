@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from .adapters.input import ReadableInput
 from .adapters.input_evdev import EvdevScannerInput
@@ -10,6 +11,7 @@ from .adapters.playback_spotify import SpotifyPlaybackBackend
 from .adapters.playback_stub import StubPlaybackBackend
 from .config import Settings
 from .core.models import PlaybackBackend
+from .runtime_health import DependencyStatus, HealthMonitor, RuntimeHealthMonitor
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,7 @@ class RuntimeDependencies:
 
     input_stream: ReadableInput
     playback_backend: PlaybackBackend
+    health_monitor: HealthMonitor
     source: str
 
 
@@ -41,20 +44,17 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
 
     input_stream = _build_input_backend(settings, default_stdin)
     playback_backend = _build_playback_backend(settings)
-    probe_result = playback_backend.probe()
-    if not probe_result.ok:
-        raise StartupError(
-            code="receiver_unavailable",
-            message=probe_result.message or "Playback backend startup probe failed.",
-            reason_code=probe_result.reason_code,
-            backend=probe_result.backend,
-            device_name=probe_result.device_name,
-            source=settings.input_backend,
-        )
+    health_monitor = RuntimeHealthMonitor(
+        scanner_status=_build_input_status_source(settings, input_stream).status,
+        playback_status=cast(_StatusSource, playback_backend).status,
+        poll_interval_seconds=settings.health_poll_interval_seconds,
+        source=settings.input_backend,
+    )
 
     return RuntimeDependencies(
         input_stream=input_stream,
         playback_backend=playback_backend,
+        health_monitor=health_monitor,
         source=settings.input_backend,
     )
 
@@ -64,15 +64,7 @@ def _build_input_backend(settings: Settings, default_stdin: ReadableInput) -> Re
         return default_stdin
 
     assert settings.scanner_device is not None
-    try:
-        return EvdevScannerInput(settings.scanner_device)
-    except OSError as exc:
-        raise StartupError(
-            code="scanner_unavailable",
-            message=f"Scanner device unavailable: {exc}",
-            reason_code="scanner_unavailable",
-            source=settings.input_backend,
-        ) from exc
+    return EvdevScannerInput(settings.scanner_device)
 
 
 def _build_playback_backend(settings: Settings) -> PlaybackBackend:
@@ -90,3 +82,29 @@ def _build_playback_backend(settings: Settings) -> PlaybackBackend:
             confirmation_poll_interval_seconds=settings.spotify_confirm_poll_interval_seconds,
         )
     return StubPlaybackBackend()
+
+
+class _StatusSource:
+    def status(self) -> DependencyStatus:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class _StaticReadyStatusSource(_StatusSource):
+    source: str | None = None
+    backend: str | None = None
+
+    def status(self) -> DependencyStatus:
+        return DependencyStatus(
+            code="ready",
+            ready=True,
+            message="waiting for scan input",
+            source=self.source,
+            backend=self.backend,
+        )
+
+
+def _build_input_status_source(settings: Settings, input_stream: ReadableInput) -> _StatusSource:
+    if settings.input_backend == "stdin":
+        return _StaticReadyStatusSource(source=settings.input_backend)
+    return cast(_StatusSource, input_stream)

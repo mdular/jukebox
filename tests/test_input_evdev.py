@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Iterator
 
 from jukebox.adapters.input_evdev import EvdevScannerInput, ScannerKeyEvent
 
@@ -53,7 +54,6 @@ class EvdevScannerInputTests(unittest.TestCase):
         )
 
         self.assertEqual(scanner.readline(), "s1\n")
-        self.assertEqual(scanner.readline(), "")
 
     def test_preserves_shifted_letters_and_colons_from_scanner(self) -> None:
         scanner = EvdevScannerInput(
@@ -133,13 +133,82 @@ class EvdevScannerInputTests(unittest.TestCase):
 
         self.assertEqual(scanner.readline(), "spotify:track:23dfqX3nRspRfHtVgOVU95\n")
 
-    def test_open_failures_are_propagated(self) -> None:
-        with self.assertRaises(OSError):
-            EvdevScannerInput(
-                "/dev/input/by-id/scanner-event-kbd",
-                event_stream_factory=_raise_oserror,
-            )
+    def test_status_reports_unavailable_until_the_device_can_be_opened(self) -> None:
+        attempts = {"count": 0}
+
+        def factory(path: str) -> list[ScannerKeyEvent] | Iterator[ScannerKeyEvent]:
+            del path
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise OSError("cannot open scanner")
+            return iter([ScannerKeyEvent("KEY_S"), ScannerKeyEvent("KEY_ENTER")])
+
+        scanner = EvdevScannerInput(
+            "/dev/input/by-id/scanner-event-kbd",
+            event_stream_factory=factory,
+            sleeper=lambda seconds: None,
+        )
+
+        unavailable = scanner.status()
+        line = scanner.readline()
+        ready = scanner.status()
+
+        self.assertFalse(unavailable.ready)
+        self.assertEqual(unavailable.code, "scanner_unavailable")
+        self.assertEqual(line, "s\n")
+        self.assertTrue(ready.ready)
+        self.assertEqual(ready.code, "ready")
+
+    def test_disconnect_clears_the_partial_buffer_before_reconnect(self) -> None:
+        scanner = EvdevScannerInput(
+            "/dev/input/by-id/scanner-event-kbd",
+            event_stream_factory=_ReconnectFactory(
+                [
+                    _disconnecting_stream(
+                        [
+                            ScannerKeyEvent("KEY_S"),
+                            ScannerKeyEvent("KEY_P"),
+                            ScannerKeyEvent("KEY_O"),
+                        ]
+                    ),
+                    iter(
+                        [
+                            ScannerKeyEvent("KEY_S"),
+                            ScannerKeyEvent("KEY_P"),
+                            ScannerKeyEvent("KEY_O"),
+                            ScannerKeyEvent("KEY_T"),
+                            ScannerKeyEvent("KEY_I"),
+                            ScannerKeyEvent("KEY_F"),
+                            ScannerKeyEvent("KEY_Y"),
+                            ScannerKeyEvent("KEY_COLON"),
+                            ScannerKeyEvent("KEY_T"),
+                            ScannerKeyEvent("KEY_R"),
+                            ScannerKeyEvent("KEY_A"),
+                            ScannerKeyEvent("KEY_C"),
+                            ScannerKeyEvent("KEY_K"),
+                            ScannerKeyEvent("KEY_COLON"),
+                            ScannerKeyEvent("KEY_1"),
+                            ScannerKeyEvent("KEY_2"),
+                            ScannerKeyEvent("KEY_3"),
+                            ScannerKeyEvent("KEY_ENTER"),
+                        ]
+                    ),
+                ]
+            ),
+            sleeper=lambda seconds: None,
+        )
+
+        self.assertEqual(scanner.readline(), "spotify:track:123\n")
+class _ReconnectFactory:
+    def __init__(self, streams: list[Iterator[ScannerKeyEvent]]) -> None:
+        self._streams = streams
+
+    def __call__(self, path: str) -> Iterator[ScannerKeyEvent]:
+        del path
+        return self._streams.pop(0)
 
 
-def _raise_oserror(path: str) -> object:
-    raise OSError(f"cannot open {path}")
+def _disconnecting_stream(events: list[ScannerKeyEvent]) -> Iterator[ScannerKeyEvent]:
+    for event in events:
+        yield event
+    raise OSError("scanner disconnected")

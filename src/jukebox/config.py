@@ -28,6 +28,7 @@ JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[str] = (
 JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[str] = (
     "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS"
 )
+JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS: Final[str] = "JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS"
 
 DEFAULT_ENV: Final[str] = "development"
 DEFAULT_LOG_LEVEL: Final[str] = "INFO"
@@ -37,6 +38,7 @@ DEFAULT_DUPLICATE_WINDOW_SECONDS: Final[float] = 2.0
 DEFAULT_INPUT_BACKEND: Final[InputBackendName] = "stdin"
 DEFAULT_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[float] = 5.0
 DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[float] = 0.25
+DEFAULT_HEALTH_POLL_INTERVAL_SECONDS: Final[float] = 5.0
 
 _ALLOWED_LOG_LEVELS: Final[frozenset[str]] = frozenset(
     {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
@@ -68,6 +70,7 @@ class Settings:
     spotify_target_device_name: str | None
     spotify_confirm_timeout_seconds: float
     spotify_confirm_poll_interval_seconds: float
+    health_poll_interval_seconds: float
 
 
 def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
@@ -96,6 +99,11 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS,
         default=DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS,
     )
+    health_poll_interval_seconds = _read_positive_float(
+        source,
+        JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS,
+        default=DEFAULT_HEALTH_POLL_INTERVAL_SECONDS,
+    )
     settings = Settings(
         environment=environment,
         log_level=log_level,
@@ -111,6 +119,7 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         spotify_target_device_name=spotify_target_device_name,
         spotify_confirm_timeout_seconds=spotify_confirm_timeout_seconds,
         spotify_confirm_poll_interval_seconds=spotify_confirm_poll_interval_seconds,
+        health_poll_interval_seconds=health_poll_interval_seconds,
     )
     _validate_backend_settings(settings)
     return settings
@@ -209,6 +218,12 @@ def _read_optional_value(source: Mapping[str, str], key: str) -> str | None:
 
 
 def _validate_backend_settings(settings: Settings) -> None:
+    if settings.spotify_confirm_poll_interval_seconds > settings.spotify_confirm_timeout_seconds:
+        raise ConfigError(
+            f"{JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS} must not exceed "
+            f"{JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS}."
+        )
+
     if settings.input_backend == "evdev" and settings.scanner_device is None:
         raise ConfigError(
             f"{JUKEBOX_INPUT_BACKEND}=evdev requires {JUKEBOX_SCANNER_DEVICE}."

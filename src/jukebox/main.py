@@ -47,10 +47,15 @@ def main(
     )
 
     event_sinks: list[EventSink] = [TerminalStatusSink(output_stream), StructuredEventLogger()]
-    _emit_event(event_sinks, ControllerEvent(code="booting", message="waiting for scanner and receiver"))
+    _emit_event(
+        event_sinks,
+        ControllerEvent(code="booting", message="waiting for scanner and receiver"),
+    )
 
     try:
-        runtime = (build_runtime if runtime_factory is None else runtime_factory)(settings, input_stream)
+        runtime = (build_runtime if runtime_factory is None else runtime_factory)(
+            settings, input_stream
+        )
     except StartupError as exc:
         _emit_event(
             event_sinks,
@@ -73,15 +78,17 @@ def main(
         duplicate_gate=DuplicateGate(window_seconds=settings.duplicate_window_seconds),
         event_sinks=event_sinks,
     )
-    controller.emit_ready(source=runtime.source)
     LOGGER.info("jukebox controller started", extra={"backend": settings.playback_backend})
 
     try:
+        runtime.health_monitor.start(event_sinks)
         for line in ScanLineReader(runtime.input_stream):
             controller.process_line(line)
     except KeyboardInterrupt:
         LOGGER.info("jukebox controller interrupted")
         return 130
+    finally:
+        runtime.health_monitor.stop()
 
     return 0
 

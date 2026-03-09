@@ -23,3 +23,12 @@ class StubPlaybackBackendTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.backend, "stub")
         self.assertIn("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", result.message or "")
+
+    def test_stub_backend_reports_ready_status(self) -> None:
+        backend = StubPlaybackBackend()
+
+        status = backend.status()
+
+        self.assertTrue(status.ready)
+        self.assertEqual(status.code, "ready")
+        self.assertEqual(status.backend, "stub")

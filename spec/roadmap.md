@@ -137,6 +137,7 @@ Add refinement after the stable V1 appliance baseline exists, while keeping the 
 - Introduce optional controls that fit the concept without increasing operational complexity, such as a stop button.
 - Define the direction for volume control and the transition from external V1 audio to a more integrated V2 audio approach.
 - Improve maintenance ergonomics where they reduce friction without destabilizing the core loop.
+- Define an appliance-grade standalone receiver-auth or re-auth path, such as a browser-based operator flow, so receiver credential bootstrap does not depend on harvested tokens or machine-specific bring-up hacks.
 - Separate immediate polish work from longer-term backlog concepts so V2 planning stays disciplined.
 
 ### Validation Focus

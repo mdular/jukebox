@@ -1,7 +1,7 @@
 [Unit]
 Description=Jukebox controller service
-After=network-online.target raspotify.service
-Wants=network-online.target raspotify.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

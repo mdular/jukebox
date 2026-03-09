@@ -1,5 +1,7 @@
 # Example Payloads And Spotify Auth Notes
 
+Example QR images for the sample payloads live under [`spec/qr codes/`](/Users/markus/Workspace/jukebox/spec/qr%20codes).
+
 ## Example Spotify URI
 
 ```text

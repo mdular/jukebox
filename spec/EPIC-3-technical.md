@@ -5,7 +5,7 @@
 This document turns [spec/EPIC-3-requirements.md](/Users/markus/Workspace/jukebox/spec/EPIC-3-requirements.md) into an implementation design for the current Python repository.
 It is intentionally scoped to EPIC 3: harden the Raspberry Pi 3 jukebox into a stable, low-maintenance appliance candidate with observable degraded states, autonomous post-boot playback readiness, and build-readiness notes that fit the current repo and deployment flow.
 
-This design is grounded in the current repo state:
+This design is grounded in the repository structure and EPIC 2 foundation already present at the start of EPIC 3:
 
 - Python 3.11 package code under `src/jukebox`
 - existing controller, parser, duplicate gate, `evdev` scanner adapter, and Spotify Web API playback backend from EPIC 2
@@ -50,7 +50,7 @@ This design also makes one explicit implementation assumption under `D-1`:
 - No hotspot flow, offline mode, OTA update path, or read-only filesystem work.
 - No full enclosure design or construction plan beyond the runtime-sensitive notes required by EPIC 3.
 
-## Current Baseline
+## EPIC 3 Starting Baseline
 
 The repository already contains the EPIC 2 runtime and deployment foundation that EPIC 3 should extend directly:
 

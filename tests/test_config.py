@@ -23,6 +23,7 @@ class FromEnvTests(unittest.TestCase):
         self.assertIsNone(settings.spotify_target_device_name)
         self.assertEqual(settings.spotify_confirm_timeout_seconds, 5.0)
         self.assertEqual(settings.spotify_confirm_poll_interval_seconds, 0.25)
+        self.assertEqual(settings.health_poll_interval_seconds, 5.0)
 
     def test_environment_overrides_are_normalized(self) -> None:
         settings = from_env(
@@ -50,6 +51,7 @@ class FromEnvTests(unittest.TestCase):
                 "JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME": "jukebox",
                 "JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS": "3.5",
                 "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS": "0.5",
+                "JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS": "7.5",
             }
         )
 
@@ -64,6 +66,7 @@ class FromEnvTests(unittest.TestCase):
         self.assertEqual(settings.spotify_target_device_name, "jukebox")
         self.assertEqual(settings.spotify_confirm_timeout_seconds, 3.5)
         self.assertEqual(settings.spotify_confirm_poll_interval_seconds, 0.5)
+        self.assertEqual(settings.health_poll_interval_seconds, 7.5)
 
     def test_invalid_log_level_raises_config_error(self) -> None:
         with self.assertRaises(ConfigError):
@@ -120,3 +123,7 @@ class FromEnvTests(unittest.TestCase):
                     "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS": "1.5",
                 }
             )
+
+    def test_health_poll_interval_must_be_positive(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS": "0"})

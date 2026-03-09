@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from ..core.models import PlaybackRequest, PlaybackResult
+from ..runtime_health import DependencyStatus
 
 
 class ResponseLike(Protocol):
@@ -77,60 +78,60 @@ class SpotifyPlaybackBackend:
             message="Spotify authentication available.",
         )
 
+    def status(self) -> DependencyStatus:
+        """Return the current Spotify readiness status."""
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            return self._status_from_result(access_token_or_error)
+
+        target_device_or_error = self._resolve_target_device(access_token_or_error)
+        if isinstance(target_device_or_error, PlaybackResult):
+            return self._status_from_result(target_device_or_error)
+
+        return DependencyStatus(
+            code="ready",
+            ready=True,
+            message="waiting for scan input",
+            backend="spotify",
+            device_name=target_device_or_error.name,
+        )
+
     def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
-        """Refresh an access token, send playback, and confirm it started."""
+        """Refresh an access token, transfer playback, and confirm it started."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
             return access_token_or_error
 
-        target_device_or_error = self._resolve_target_device(access_token_or_error)
-        if isinstance(target_device_or_error, PlaybackResult):
-            return target_device_or_error
+        last_result: PlaybackResult | None = None
+        for attempt in range(2):
+            target_device_or_error = self._resolve_target_device(access_token_or_error)
+            if isinstance(target_device_or_error, PlaybackResult):
+                if target_device_or_error.reason_code == "device_not_listed" and attempt == 0:
+                    last_result = target_device_or_error
+                    continue
+                return target_device_or_error
 
-        payload: dict[str, object]
-        if request.uri.kind == "track":
-            payload = {"uris": [request.uri.raw]}
-        else:
-            payload = {"context_uri": request.uri.raw}
+            transfer_result = self._transfer_playback(access_token_or_error, target_device_or_error)
+            if not transfer_result.ok:
+                if transfer_result.reason_code == "connect_transfer_failed" and attempt == 0:
+                    last_result = transfer_result
+                    continue
+                return transfer_result
 
-        url = "https://api.spotify.com/v1/me/player/play"
-        url = f"{url}?{urlencode({'device_id': target_device_or_error.device_id})}"
-
-        http_request = Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {access_token_or_error}",
-                "Content-Type": "application/json",
-            },
-            method="PUT",
-        )
-
-        try:
-            response = self._requester(http_request, self._timeout_seconds)
-        except HTTPError as exc:
-            return self._map_http_error(exc)
-        except URLError as exc:
-            return PlaybackResult(
-                ok=False,
-                backend="spotify",
-                reason_code="spotify_transport_error",
-                message=f"Spotify transport error: {exc.reason}",
-            )
-
-        if 200 <= response.status < 300:
-            return self._confirm_playback(
+            play_result = self._start_playback(
                 access_token_or_error,
                 target_device_or_error,
                 request,
             )
-        return PlaybackResult(
-            ok=False,
-            backend="spotify",
-            reason_code="spotify_unexpected_response",
-            message=f"Unexpected Spotify response status: {response.status}",
-        )
+            if not play_result.ok:
+                return play_result
+
+            return self._confirm_playback(access_token_or_error, target_device_or_error, request)
+
+        assert last_result is not None
+        return last_result
 
     def _refresh_access_token(self) -> str | PlaybackResult:
         credentials = f"{self._client_id}:{self._client_secret}".encode("utf-8")
@@ -160,16 +161,11 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_auth_error",
+                reason_code="spotify_api_auth_error",
                 message=f"Spotify authentication failed with HTTP {exc.code}.",
             )
         except URLError as exc:
-            return PlaybackResult(
-                ok=False,
-                backend="spotify",
-                reason_code="spotify_transport_error",
-                message=f"Spotify transport error: {exc.reason}",
-            )
+            return self._network_error(exc)
 
         try:
             body = response.read().decode("utf-8")
@@ -178,7 +174,7 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
+                reason_code="spotify_api_auth_error",
                 message="Spotify token refresh returned invalid JSON.",
             )
 
@@ -187,7 +183,7 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
+                reason_code="spotify_api_auth_error",
                 message="Spotify token refresh response did not include an access token.",
             )
         return access_token
@@ -202,21 +198,16 @@ class SpotifyPlaybackBackend:
         try:
             response = self._requester(devices_request, self._timeout_seconds)
         except HTTPError as exc:
-            return self._map_http_error(exc)
+            return self._map_http_error(exc, operation="device_lookup")
         except URLError as exc:
-            return PlaybackResult(
-                ok=False,
-                backend="spotify",
-                reason_code="spotify_transport_error",
-                message=f"Spotify transport error: {exc.reason}",
-            )
+            return self._network_error(exc)
 
         if response.status != 200:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
-                message=f"Unexpected Spotify response status: {response.status}",
+                reason_code="network_discovery_failed",
+                message=f"Unexpected Spotify response status: {response.status}.",
             )
 
         try:
@@ -225,7 +216,7 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
+                reason_code="network_discovery_failed",
                 message="Spotify devices response returned invalid JSON.",
             )
 
@@ -234,7 +225,7 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
+                reason_code="network_discovery_failed",
                 message="Spotify devices response did not include a device list.",
             )
 
@@ -256,9 +247,108 @@ class SpotifyPlaybackBackend:
         return PlaybackResult(
             ok=False,
             backend="spotify",
-            reason_code="spotify_target_device_unavailable",
+            reason_code="device_not_listed",
             message="Spotify target device unavailable.",
             device_name=self._target_device_name,
+        )
+
+    def _transfer_playback(self, access_token: str, target_device: _TargetDevice) -> PlaybackResult:
+        transfer_request = Request(
+            "https://api.spotify.com/v1/me/player",
+            data=json.dumps(
+                {"device_ids": [target_device.device_id], "play": False}
+            ).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            method="PUT",
+        )
+
+        try:
+            response = self._requester(transfer_request, self._timeout_seconds)
+        except HTTPError as exc:
+            result = self._map_http_error(exc, operation="transfer")
+            return PlaybackResult(
+                ok=False,
+                backend=result.backend,
+                reason_code=result.reason_code,
+                message=result.message,
+                device_name=target_device.name,
+            )
+        except URLError as exc:
+            result = self._network_error(exc)
+            return PlaybackResult(
+                ok=False,
+                backend=result.backend,
+                reason_code=result.reason_code,
+                message=result.message,
+                device_name=target_device.name,
+            )
+
+        if 200 <= response.status < 300:
+            return PlaybackResult(ok=True, backend="spotify", device_name=target_device.name)
+        return PlaybackResult(
+            ok=False,
+            backend="spotify",
+            reason_code="connect_transfer_failed",
+            message=f"Unexpected Spotify response status: {response.status}.",
+            device_name=target_device.name,
+        )
+
+    def _start_playback(
+        self,
+        access_token: str,
+        target_device: _TargetDevice,
+        request: PlaybackRequest,
+    ) -> PlaybackResult:
+        payload: dict[str, object]
+        if request.uri.kind == "track":
+            payload = {"uris": [request.uri.raw]}
+        else:
+            payload = {"context_uri": request.uri.raw}
+
+        url = "https://api.spotify.com/v1/me/player/play"
+        url = f"{url}?{urlencode({'device_id': target_device.device_id})}"
+        play_request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            method="PUT",
+        )
+
+        try:
+            response = self._requester(play_request, self._timeout_seconds)
+        except HTTPError as exc:
+            result = self._map_http_error(exc, operation="start")
+            return PlaybackResult(
+                ok=False,
+                backend=result.backend,
+                reason_code=result.reason_code,
+                message=result.message,
+                device_name=target_device.name,
+            )
+        except URLError as exc:
+            result = self._network_error(exc)
+            return PlaybackResult(
+                ok=False,
+                backend=result.backend,
+                reason_code=result.reason_code,
+                message=result.message,
+                device_name=target_device.name,
+            )
+
+        if 200 <= response.status < 300:
+            return PlaybackResult(ok=True, backend="spotify", device_name=target_device.name)
+        return PlaybackResult(
+            ok=False,
+            backend="spotify",
+            reason_code="spotify_start_failed",
+            message=f"Unexpected Spotify response status: {response.status}.",
+            device_name=target_device.name,
         )
 
     def _confirm_playback(
@@ -305,14 +395,9 @@ class SpotifyPlaybackBackend:
         try:
             response = self._requester(playback_request, self._timeout_seconds)
         except HTTPError as exc:
-            return self._map_http_error(exc)
+            return self._map_http_error(exc, operation="confirm")
         except URLError as exc:
-            return PlaybackResult(
-                ok=False,
-                backend="spotify",
-                reason_code="spotify_transport_error",
-                message=f"Spotify transport error: {exc.reason}",
-            )
+            return self._network_error(exc)
 
         if response.status == 204:
             return None
@@ -320,8 +405,8 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
-                message=f"Unexpected Spotify response status: {response.status}",
+                reason_code="network_discovery_failed",
+                message=f"Unexpected Spotify response status: {response.status}.",
             )
 
         try:
@@ -330,14 +415,14 @@ class SpotifyPlaybackBackend:
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
+                reason_code="network_discovery_failed",
                 message="Spotify playback status returned invalid JSON.",
             )
         if not isinstance(payload, dict):
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
-                reason_code="spotify_unexpected_response",
+                reason_code="network_discovery_failed",
                 message="Spotify playback status returned an invalid payload.",
             )
         return payload
@@ -363,22 +448,46 @@ class SpotifyPlaybackBackend:
         context = payload.get("context")
         return isinstance(context, dict) and context.get("uri") == request.uri.raw
 
-    def _map_http_error(self, exc: HTTPError) -> PlaybackResult:
-        if exc.code == 401:
-            reason_code = "spotify_auth_error"
-        elif exc.code == 403:
-            reason_code = "spotify_forbidden"
-        elif exc.code == 404:
-            reason_code = "spotify_no_active_device"
+    def _map_http_error(self, exc: HTTPError, *, operation: str) -> PlaybackResult:
+        if exc.code in {401, 403}:
+            reason_code = "spotify_api_auth_error"
         elif exc.code == 429:
             reason_code = "spotify_rate_limited"
+        elif operation == "transfer":
+            reason_code = "connect_transfer_failed"
+        elif operation == "start":
+            reason_code = "spotify_start_failed"
         else:
-            reason_code = "spotify_unexpected_response"
+            reason_code = "network_discovery_failed"
         return PlaybackResult(
             ok=False,
             backend="spotify",
             reason_code=reason_code,
             message=f"Spotify playback failed with HTTP {exc.code}.",
+        )
+
+    def _network_error(self, exc: URLError) -> PlaybackResult:
+        return PlaybackResult(
+            ok=False,
+            backend="spotify",
+            reason_code="network_discovery_failed",
+            message=f"Spotify transport error: {exc.reason}",
+        )
+
+    def _status_from_result(self, result: PlaybackResult) -> DependencyStatus:
+        if result.reason_code == "spotify_api_auth_error":
+            code = "controller_auth_unavailable"
+        elif result.reason_code == "device_not_listed":
+            code = "receiver_unavailable"
+        else:
+            code = "network_unavailable"
+        return DependencyStatus(
+            code=code,
+            ready=False,
+            message=result.message or "dependency unavailable",
+            reason_code=result.reason_code,
+            backend=result.backend,
+            device_name=result.device_name,
         )
 
 

@@ -10,6 +10,10 @@ The system is designed to be built in stages:
 - V1: Validate the interaction and playback using external speakers
 - V2: Add internal stereo speakers and refined controls
 
+Reference assets kept with this concept:
+- Layout and enclosure render: [`spec/design render.png`](/Users/markus/Workspace/jukebox/spec/design%20render.png)
+- Example QR images: [`spec/qr codes/`](/Users/markus/Workspace/jukebox/spec/qr%20codes)
+
 ---
 
 # Goals
@@ -231,6 +235,10 @@ Examples:
 spotify:track:ID
 spotify:album:ID
 spotify:playlist:ID
+
+Reference examples for this card format:
+- Example QR image set: [`spec/qr codes/`](/Users/markus/Workspace/jukebox/spec/qr%20codes)
+- Example payloads and auth notes: [`spec/examples.md`](/Users/markus/Workspace/jukebox/spec/examples.md)
 
 ---
 

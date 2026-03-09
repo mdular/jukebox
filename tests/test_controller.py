@@ -145,6 +145,9 @@ class _RecordingBackend:
         self._results = results
         self.requests: list[PlaybackRequest] = []
 
+    def probe(self) -> PlaybackResult:
+        return PlaybackResult(ok=True, backend="stub", message="ready")
+
     def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
         self.requests.append(request)
         if self._results:

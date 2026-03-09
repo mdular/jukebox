@@ -1,6 +1,6 @@
 # Raspberry Pi Deploy
 
-This document describes the repeatable SSH/SCP deployment workflow for EPIC 2.
+This document describes the repeatable SSH/SCP deployment workflow for EPIC 3.
 
 ## Remote Layout
 
@@ -22,18 +22,20 @@ The deployment scripts read:
 
 `scripts/pi-smoke.sh` also reads:
 
+- `JUKEBOX_PI_RECEIVER_SERVICE_NAME` optional, defaults to `spotifyd.service`
 - `JUKEBOX_SMOKE_URI` optional one-shot Spotify URI for remote smoke playback
 - `JUKEBOX_SMOKE_REBOOT=1` optional flag to include a clean reboot check
+- `JUKEBOX_SMOKE_REBOOT_COUNT` optional count for repeated reboot validation, defaults to `1`
 
 ## Bootstrap Once
 
-Run the initial bootstrap after the Pi is reachable over SSH, `raspotify` is installed, and the USB audio path has already been verified:
+Run the initial bootstrap after the Pi is reachable over SSH, `spotifyd.service` is installed, and the USB audio path has already been verified:
 
 ```sh
 JUKEBOX_PI_HOST=jukebox.local ./scripts/pi-bootstrap.sh
 ```
 
-That step installs baseline system packages, creates `/opt/jukebox`, and seeds `/etc/jukebox/jukebox.env` from the tracked example when necessary.
+That step installs baseline system packages, validates the receiver-service baseline, creates `/opt/jukebox`, and seeds `/etc/jukebox/jukebox.env` from the tracked example when necessary.
 
 ## Deploy the Current Working Tree
 
@@ -60,17 +62,20 @@ Check services, logs, and optionally run a one-shot playback smoke test:
 
 ```sh
 JUKEBOX_PI_HOST=jukebox.local \
+JUKEBOX_PI_RECEIVER_SERVICE_NAME=spotifyd.service \
 JUKEBOX_SMOKE_URI='spotify:track:6rqhFgbbKwnb9MLmUQDhG6' \
 ./scripts/pi-smoke.sh
 ```
 
-Include a reboot in the same flow:
+Include repeated reboot checks in the same flow:
 
 ```sh
 JUKEBOX_PI_HOST=jukebox.local \
+JUKEBOX_PI_RECEIVER_SERVICE_NAME=spotifyd.service \
 JUKEBOX_SMOKE_URI='spotify:track:6rqhFgbbKwnb9MLmUQDhG6' \
 JUKEBOX_SMOKE_REBOOT=1 \
+JUKEBOX_SMOKE_REBOOT_COUNT=3 \
 ./scripts/pi-smoke.sh
 ```
 
-The smoke helper temporarily overrides `JUKEBOX_INPUT_BACKEND=stdin` for the one-shot URI replay so the deployed runtime, Spotify auth, target-device resolution, and playback-confirmation path can be validated remotely.
+The smoke helper temporarily overrides `JUKEBOX_INPUT_BACKEND=stdin` for the one-shot URI replay so the deployed runtime, controller-side Spotify auth, receiver visibility, transfer playback, and playback-confirmation path can be validated remotely.

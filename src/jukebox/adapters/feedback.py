@@ -28,6 +28,12 @@ class TerminalStatusSink:
         if event.code == "scanner_unavailable":
             reason_code = event.reason_code or "error"
             return f"[SCANNER] unavailable: {reason_code}"
+        if event.code == "controller_auth_unavailable":
+            reason_code = event.reason_code or "error"
+            return f"[API AUTH] unavailable: {reason_code}"
+        if event.code == "network_unavailable":
+            reason_code = event.reason_code or "error"
+            return f"[NETWORK] unavailable: {reason_code}"
         if event.code == "receiver_unavailable":
             reason_code = event.reason_code or "error"
             return f"[RECEIVER] unavailable: {reason_code}"

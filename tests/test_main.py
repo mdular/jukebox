@@ -4,6 +4,7 @@ import io
 import unittest
 from pathlib import Path
 
+from jukebox.core.models import ControllerEvent
 from jukebox.main import main
 from jukebox.runtime import RuntimeDependencies, StartupError
 
@@ -23,6 +24,15 @@ class MainTests(unittest.TestCase):
             runtime_factory=lambda settings, default_stdin: RuntimeDependencies(
                 input_stream=stdin_buffer,
                 playback_backend=_StubBackend(),
+                health_monitor=_FakeHealthMonitor(
+                    [
+                        ControllerEvent(
+                            code="ready",
+                            message="waiting for scan input",
+                            source="stdin",
+                        )
+                    ]
+                ),
                 source="stdin",
             ),
         )
@@ -35,6 +45,41 @@ class MainTests(unittest.TestCase):
         self.assertIn("[DUPLICATE] ignored within 2.0s", output)
         self.assertIn("[ERROR invalid_uri]", output)
         self.assertIn("[ERROR unsupported_content]", output)
+
+    def test_main_surfaces_degraded_state_and_ready_recovery_from_health_monitor(self) -> None:
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
+        health_monitor = _FakeHealthMonitor(
+            [
+                ControllerEvent(
+                    code="scanner_unavailable",
+                    message="Scanner unavailable.",
+                    reason_code="scanner_unavailable",
+                    source="evdev",
+                ),
+                ControllerEvent(code="ready", message="waiting for scan input", source="evdev"),
+            ]
+        )
+
+        exit_code = main(
+            stdin=io.StringIO(""),
+            stdout=stdout_buffer,
+            stderr=stderr_buffer,
+            env={"JUKEBOX_ENV": "test"},
+            runtime_factory=lambda settings, default_stdin: RuntimeDependencies(
+                input_stream=io.StringIO(""),
+                playback_backend=_StubBackend(),
+                health_monitor=health_monitor,
+                source="evdev",
+            ),
+        )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout_buffer.getvalue()
+        self.assertIn("[SCANNER] unavailable: scanner_unavailable", output)
+        self.assertIn("[READY] waiting for scan input", output)
+        self.assertTrue(health_monitor.started)
+        self.assertTrue(health_monitor.stopped)
 
     def test_main_returns_nonzero_for_invalid_configuration(self) -> None:
         stderr_buffer = io.StringIO()
@@ -78,6 +123,15 @@ class MainTests(unittest.TestCase):
             runtime_factory=lambda settings, default_stdin: RuntimeDependencies(
                 input_stream=_InterruptingInput(),
                 playback_backend=_StubBackend(),
+                health_monitor=_FakeHealthMonitor(
+                    [
+                        ControllerEvent(
+                            code="ready",
+                            message="waiting for scan input",
+                            source="stdin",
+                        )
+                    ]
+                ),
                 source="stdin",
             ),
         )
@@ -99,6 +153,22 @@ class _StubBackend:
         from jukebox.core.models import PlaybackResult
 
         return PlaybackResult(ok=True, backend="stub", message=f"played {request.uri.raw}")
+
+
+class _FakeHealthMonitor:
+    def __init__(self, events: list[ControllerEvent]) -> None:
+        self._events = events
+        self.started = False
+        self.stopped = False
+
+    def start(self, event_sinks) -> None:  # type: ignore[no-untyped-def]
+        self.started = True
+        for event in self._events:
+            for sink in event_sinks:
+                sink.handle(event)
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 def _failing_runtime_factory(settings, default_stdin):  # type: ignore[no-untyped-def]

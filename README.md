@@ -1,13 +1,14 @@
 # Jukebox
 
-EPIC 2 implementation for the Raspberry Pi QR card jukebox project.
+EPIC 3 implementation for the Raspberry Pi QR card jukebox project.
 
-The repository now supports both the local `stdin` development loop and the Raspberry Pi bring-up path defined for EPIC 2: Linux `evdev` scanner intake, Spotify target-device resolution plus playback confirmation, and `systemd`-based deployment around `raspotify`.
+The repository supports both the local `stdin` development loop and the Raspberry Pi hardening path defined for EPIC 3: Linux `evdev` scanner intake with in-process reconnects, runtime health monitoring with degraded states, Spotify target-device resolution plus transfer-confirm playback control, and `systemd`-based deployment around a `spotifyd` receiver baseline.
 
 ## Project Index
 
 - Product and implementation specs live under [`spec/`](/Users/markus/Workspace/jukebox/spec).
 - [`spec/concept.md`](/Users/markus/Workspace/jukebox/spec/concept.md) is the source of truth for product direction.
+- [`spec/examples.md`](/Users/markus/Workspace/jukebox/spec/examples.md) contains example QR payloads and the Spotify auth usage flow.
 - Pi bring-up and operations live under [`docs/`](/Users/markus/Workspace/jukebox/docs):
   - [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md)
   - [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md)
@@ -74,10 +75,14 @@ Playback variables:
 - `JUKEBOX_SPOTIFY_CLIENT_ID`
 - `JUKEBOX_SPOTIFY_CLIENT_SECRET`
 - `JUKEBOX_SPOTIFY_REFRESH_TOKEN`
-- `JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME`: required for the EPIC 2 Pi path unless `JUKEBOX_SPOTIFY_DEVICE_ID` is set
+- `JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME`: required for the EPIC 3 Pi path unless `JUKEBOX_SPOTIFY_DEVICE_ID` is set
 - `JUKEBOX_SPOTIFY_DEVICE_ID`: optional override for troubleshooting
 - `JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS`: defaults to `5.0`
 - `JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS`: defaults to `0.25`
+- `JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS`: defaults to `5.0`
+
+For the controller app, the Spotify refresh token must include `user-read-playback-state` and `user-modify-playback-state`.
+Receiver-service credentials and persistent session material are configured separately for `spotifyd`; they do not belong in `/etc/jukebox/jukebox.env`.
 
 For Raspberry Pi deployment, start from [`systemd/jukebox.env.example`](/Users/markus/Workspace/jukebox/systemd/jukebox.env.example) and place the real file at `/etc/jukebox/jukebox.env`.
 
@@ -89,18 +94,19 @@ Use the Pi helpers from your development machine:
 JUKEBOX_PI_HOST=jukebox.local ./scripts/pi-bootstrap.sh
 JUKEBOX_PI_HOST=jukebox.local ./scripts/pi-deploy.sh
 JUKEBOX_PI_HOST=jukebox.local \
+JUKEBOX_PI_RECEIVER_SERVICE_NAME=spotifyd.service \
 JUKEBOX_SMOKE_URI='spotify:track:6rqhFgbbKwnb9MLmUQDhG6' \
 ./scripts/pi-smoke.sh
 ```
 
 The full operational flow is documented in [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md), [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md), and [`docs/pi-validation.md`](/Users/markus/Workspace/jukebox/docs/pi-validation.md).
-The current prototype's concrete bring-up findings are recorded in [`docs/pi-setup-log.md`](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md).
+The current prototype findings that motivated the EPIC 3 receiver change are recorded in [`docs/pi-setup-log.md`](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md).
 
-For EPIC 2 hardware validation, the default external-speaker path is now a USB sound card on the Pi rather than the 3.5 mm analog output.
+For EPIC 3 hardware validation, the default external-speaker path remains a USB sound card on the Pi rather than the 3.5 mm analog output.
 
 ## Runtime Notes
 
 - `python -m jukebox` is the canonical entrypoint.
-- The controller emits boot, ready, scan, duplicate, validation, and playback outcome events.
+- The runtime emits `booting`, `ready`, and degraded dependency states; the controller emits scan, validation, duplicate, and playback outcome events.
 - Under `systemd`, stdout and stderr are designed to be useful in `journalctl`.
-- `systemd/jukebox.service` is the EPIC 2 service baseline for Raspberry Pi OS.
+- `systemd/jukebox.service` now waits only for `network-online.target`; receiver readiness is handled in-process by the runtime health monitor.

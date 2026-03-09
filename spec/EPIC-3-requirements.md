@@ -439,6 +439,14 @@ This determines how aggressively EPIC 4 should move from the stable V1 external-
 - [ ] Begin integrated internal-audio transition immediately in EPIC 4
 - [ ] Decide later
 
+### H-4 Standalone Receiver Auth UX
+
+This determines whether EPIC 4 should turn any remaining manual receiver bootstrap steps into a more appliance-grade maintenance flow once EPIC 3 has established a stable autonomous baseline.
+
+- [ ] Add a documented standalone receiver-auth or re-auth flow, such as a browser-based operator UI or similarly self-contained maintenance path. (Recommended)
+- [ ] Keep receiver auth as a manual bring-up procedure only
+- [ ] Decide later
+
 ## Notes
 
 - This document intentionally treats the concrete EPIC 2 findings in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) as baseline inputs rather than open questions.
