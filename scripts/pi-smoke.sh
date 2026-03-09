@@ -272,6 +272,7 @@ if [ "$SMOKE_REBOOT" != "1" ]; then
   exit "$overall_status"
 fi
 
+sleep 5
 iteration=1
 while [ "$iteration" -le "$SMOKE_REBOOT_COUNT" ]; do
   echo "==> reboot iteration $iteration of $SMOKE_REBOOT_COUNT"

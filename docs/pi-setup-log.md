@@ -31,6 +31,7 @@ Follow-up expectation:
 
 - future EPIC 3 validation on this Pi should assume `spotifyd.service` is the only active Spotify receiver service
 - `docs/pi-setup.md` should stay receiver-clean and continue to assume `raspotify` is not part of the supported path
+- if we ever want to use `raspotify` again for prototyping or testing, we can unmask and re-enable it, but that should be a conscious choice rather than an accidental leftover.
 
 ## Hardware Seen On This Pi
 
@@ -166,7 +167,60 @@ Interpretation:
 - the short degraded window before `ready` is consistent with the EPIC 3 readiness contract because the runtime stayed observable and only emitted `ready` after the receiver was actually visible
 - this is the first confirmed reboot-to-visible-playback success on the supported EPIC 3 receiver path
 - the result was not only API-visible playback state; it also produced audible output on the speaker path
-- repeated reboot, controlled power-cycle, temporary network interruption recovery, and real post-boot `evdev` scanner validation are still outstanding
+
+## `spotifyd` Repeated Reboot Validation
+
+Validated on 2026-03-09 with the repeated reboot smoke flow from [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md).
+
+Observed during repeated reboot validation:
+
+- the repeated reboot smoke sequence completed successfully on the `spotifyd` baseline
+- the receiver became visible again after each reboot without opening an official Spotify client first
+- the smoke replay remained audible through the external speaker after reboot
+
+Interpretation:
+
+- repeated clean reboot recovery is now confirmed on this Pi for the supported `spotifyd` path
+
+## `spotifyd` Controlled Power-Cycle Validation
+
+Validated on 2026-03-09 after fully removing and restoring power to the Pi and speaker.
+
+Observed after power-cycle:
+
+- `spotifyd.service` recovered without manual intervention
+- `jukebox.service` recovered without manual intervention
+- the receiver became visible to Spotify again without another Spotify client waking it
+- the smoke validation succeeded again on the restored system
+
+Interpretation:
+
+- the supported `spotifyd` baseline now survives a controlled power-cycle on this Pi
+- EPIC 3 validation on this Pi no longer depends only on clean reboot behavior
+
+## `spotifyd` Network Interruption Validation
+
+Validated on 2026-03-09 by disabling upstream internet access at the router while playback was already in progress, then restoring connectivity later.
+
+Observed during the interruption:
+
+- an already-playing track continued for a while after internet access was removed, then eventually stopped
+- the jukebox runtime emitted `[NETWORK] unavailable: network_discovery_failed`
+- structured logs recorded `network_unavailable` with `reason_code: "network_discovery_failed"` and the Spotify transport error `Connection refused`
+- real `evdev` card scans were still received and accepted during the outage
+- playback dispatch for new scans failed cleanly with `network_discovery_failed`
+
+Observed after connectivity returned:
+
+- the runtime recovered to `[READY]` without restarting either service manually
+- a fresh real card scan later succeeded and started playback again on the configured `jukebox` target
+
+Interpretation:
+
+- temporary upstream network loss now produces the expected EPIC 3 degraded state instead of a silent hang
+- scan intake remains functional during the degraded state even though new playback dispatch fails
+- the supported `spotifyd` baseline recovered automatically once internet connectivity returned
+- this validation also confirms real post-boot `evdev` scanner-card playback on the `spotifyd` baseline, not only stdin smoke replay
 
 ## Current Validation Status
 
@@ -181,8 +235,11 @@ Confirmed working on this Pi:
 - `spotifyd.service` is now running as the supported EPIC 3 receiver baseline on this Pi
 - after reboot on 2026-03-09, the `spotifyd` receiver became visible to Spotify and accepted a successful stdin-triggered playback dispatch
 - that 2026-03-09 stdin-triggered playback was audible through the connected external speaker
+- repeated clean reboot validation now succeeds on the `spotifyd` baseline on this Pi
+- a controlled power-cycle validation now succeeds on the `spotifyd` baseline on this Pi
+- temporary network interruption now surfaces `network_unavailable`, recovers back to `ready`, and accepts playback again once connectivity returns
+- real post-boot scanner-card playback is confirmed on the `spotifyd` baseline through the physical `evdev` path
+- real scans during the network outage were still accepted and failed cleanly with `network_discovery_failed`
 
 Not yet completed or not yet reliable on this Pi:
-
-- repeated reboot, controlled power-cycle, and temporary network interruption validation on the `spotifyd` baseline
-- real post-boot scanner-card validation on the `spotifyd` baseline, not only stdin smoke replay
+- no additional EPIC 3 validation gaps are currently recorded on this Pi

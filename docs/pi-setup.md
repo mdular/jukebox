@@ -238,7 +238,7 @@ backend = "alsa"
 device = "default"
 cache_path = "/var/cache/spotifyd"
 use_mpris = false
-volume_normalisation = false
+volume_normalisation = true
 ```
 
 Create the persistent cache directory and make it writable by the runtime user:
