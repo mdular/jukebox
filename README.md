@@ -10,6 +10,7 @@ The repository supports both the local `stdin` development loop and the Raspberr
 - [`spec/concept.md`](/Users/markus/Workspace/jukebox/spec/concept.md) is the source of truth for product direction.
 - [`spec/examples.md`](/Users/markus/Workspace/jukebox/spec/examples.md) contains example QR payloads and the Spotify auth usage flow.
 - Pi bring-up and operations live under [`docs/`](/Users/markus/Workspace/jukebox/docs):
+  - [`docs/pi-build.md`](/Users/markus/Workspace/jukebox/docs/pi-build.md)
   - [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md)
   - [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md)
   - [`docs/pi-validation.md`](/Users/markus/Workspace/jukebox/docs/pi-validation.md)
@@ -17,7 +18,7 @@ The repository supports both the local `stdin` development loop and the Raspberr
 ## Repository Layout
 
 ```text
-docs/           Raspberry Pi setup, deploy, and validation guides
+docs/           Raspberry Pi build, setup, deploy, and validation guides
 spec/           Project specifications
 src/jukebox/    Application package
 tests/          Automated tests
@@ -99,7 +100,7 @@ JUKEBOX_SMOKE_URI='spotify:track:6rqhFgbbKwnb9MLmUQDhG6' \
 ./scripts/pi-smoke.sh
 ```
 
-The full operational flow is documented in [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md), [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md), and [`docs/pi-validation.md`](/Users/markus/Workspace/jukebox/docs/pi-validation.md).
+The full operational flow is documented in [`docs/pi-build.md`](/Users/markus/Workspace/jukebox/docs/pi-build.md), [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md), [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md), and [`docs/pi-validation.md`](/Users/markus/Workspace/jukebox/docs/pi-validation.md).
 The current prototype findings that motivated the EPIC 3 receiver change are recorded in [`docs/pi-setup-log.md`](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md).
 
 For EPIC 3 hardware validation, the default external-speaker path remains a USB sound card on the Pi rather than the 3.5 mm analog output.

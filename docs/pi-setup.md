@@ -16,6 +16,7 @@ This guide covers:
 - the separation between controller-side Spotify Web API credentials and receiver-side session material
 
 This guide does not automate SD card imaging or physical speaker/scanner installation.
+For the current prototype parts and scanner-specific notes, see [docs/pi-build.md](/Users/markus/Workspace/jukebox/docs/pi-build.md).
 
 ## 1. Flash Raspberry Pi OS Lite
 
