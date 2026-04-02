@@ -32,3 +32,27 @@ class StubPlaybackBackend:
             backend="stub",
             message=f"Would play {request.uri.kind} {request.uri.raw}",
         )
+
+    def enqueue(self, request: PlaybackRequest) -> PlaybackResult:
+        """Return a successful queue result without side effects."""
+
+        return PlaybackResult(
+            ok=True,
+            backend="stub",
+            message=f"Would queue {request.uri.kind} {request.uri.raw}",
+        )
+
+    def stop(self) -> PlaybackResult:
+        """Return a successful stop result without side effects."""
+
+        return PlaybackResult(ok=True, backend="stub", message="Would stop playback")
+
+    def skip_next(self) -> PlaybackResult:
+        """Return a successful next-track result without side effects."""
+
+        return PlaybackResult(ok=True, backend="stub", message="Would skip to next track")
+
+    def set_volume_percent(self, percent: int) -> PlaybackResult:
+        """Return a successful volume result without side effects."""
+
+        return PlaybackResult(ok=True, backend="stub", message=f"Would set volume to {percent}%")

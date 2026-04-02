@@ -20,15 +20,16 @@ Expected remote checks:
 - `jukebox.service` is active
 - recent `journalctl -u spotifyd.service` output is readable
 - recent `journalctl -u jukebox.service` output is readable
-- the receiver visibility snapshot reports `status_code: "ready"` before the system is treated as ready
+- the operator `status.json` endpoint is readable before the system is treated as ready
 - a one-shot stdin replay reaches `[PLAYBACK spotify] started ...` without an official Spotify client waking the receiver first
+- an optional action-card stdin replay reaches `[ACTION] ...` or `[QUEUE ...] ...` for supported EPIC 4 control cards
 
-The visibility snapshot now distinguishes:
+The status JSON now distinguishes:
 
-- `controller_auth_unavailable` with `spotify_api_auth_error`
-- `network_unavailable` with `network_discovery_failed`
-- `receiver_unavailable` with `device_not_listed`
-- `ready` when the configured target is currently visible to Spotify
+- `feedback.display_state`
+- `runtime.playback_mode`
+- `runtime.setup_required`
+- `runtime.auth_required`
 
 Interpret the remote snapshot carefully:
 

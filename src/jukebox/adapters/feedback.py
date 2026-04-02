@@ -25,6 +25,10 @@ class TerminalStatusSink:
             return "[BOOT] waiting for scanner and receiver"
         if event.code in {"idle", "ready"}:
             return "[READY] waiting for scan input"
+        if event.code == "setup_required":
+            return f"[SETUP] required: {event.setup_mode or 'setup'}"
+        if event.code == "auth_required":
+            return f"[AUTH] required: {event.setup_mode or 'auth_required'}"
         if event.code == "scanner_unavailable":
             reason_code = event.reason_code or "error"
             return f"[SCANNER] unavailable: {reason_code}"
@@ -41,11 +45,22 @@ class TerminalStatusSink:
             return f"[SCAN] {event.payload}"
         if event.code == "scan_accepted":
             return f"[ACCEPTED] {event.uri_kind} {event.payload}"
+        if event.code == "action_card_accepted":
+            return f"[ACTION] accepted {event.action_name}"
         if event.code == "duplicate_suppressed":
             return f"[DUPLICATE] {event.message}"
         if event.code in {"invalid_payload", "unsupported_content"}:
             reason_code = event.reason_code or "error"
             return f"[ERROR {reason_code}] {event.message}"
+        if event.code == "action_succeeded":
+            return f"[ACTION] {event.action_name or event.message}"
+        if event.code == "action_failed":
+            reason_code = event.reason_code or "error"
+            return f"[ACTION] failed: {reason_code}"
+        if event.code == "playback_enqueued":
+            return f"[QUEUE {event.backend}] queued {event.uri_kind}"
+        if event.code == "playback_mode_fallback":
+            return f"[MODE] {event.message}"
         if event.code == "playback_dispatch_succeeded":
             device_fragment = f" on {event.device_name}" if event.device_name else ""
             return f"[PLAYBACK {event.backend}] started {event.uri_kind}{device_fragment}"

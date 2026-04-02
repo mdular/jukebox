@@ -1,8 +1,8 @@
 # Jukebox
 
-EPIC 3 implementation for the Raspberry Pi QR card jukebox project.
+EPIC 4 implementation for the Raspberry Pi QR card jukebox project.
 
-The repository supports both the local `stdin` development loop and the Raspberry Pi hardening path defined for EPIC 3: Linux `evdev` scanner intake with in-process reconnects, runtime health monitoring with degraded states, Spotify target-device resolution plus transfer-confirm playback control, and `systemd`-based deployment around a `spotifyd` receiver baseline.
+The repository supports both the local `stdin` development loop and the Raspberry Pi appliance path defined through EPIC 4: Linux `evdev` scanner intake with in-process reconnects, runtime health monitoring with degraded and setup/auth states, typed control cards, persisted playback mode, a lightweight operator HTTP surface, and `systemd`-based deployment around a `spotifyd` receiver baseline.
 
 ## Project Index
 
@@ -108,6 +108,9 @@ For EPIC 3 hardware validation, the default external-speaker path remains a USB 
 ## Runtime Notes
 
 - `python -m jukebox` is the canonical entrypoint.
-- The runtime emits `booting`, `ready`, and degraded dependency states; the controller emits scan, validation, duplicate, and playback outcome events.
+- Spotify music cards remain `spotify:(track|album|playlist):<id>`.
+- Operator and control cards use `jukebox:<group>:<action>`.
+- The runtime emits `booting`, `ready`, setup/auth-required, and degraded dependency states; the controller emits scan, validation, duplicate, action, queue, and playback outcome events.
+- The operator HTTP surface defaults to `127.0.0.1:8080` locally and is meant to be exposed on the Pi via `JUKEBOX_OPERATOR_HTTP_BIND=0.0.0.0`.
 - Under `systemd`, stdout and stderr are designed to be useful in `journalctl`.
 - `systemd/jukebox.service` now waits only for `network-online.target`; receiver readiness is handled in-process by the runtime health monitor.

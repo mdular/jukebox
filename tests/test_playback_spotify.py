@@ -11,7 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 from jukebox.adapters.playback_spotify import ResponseLike, SpotifyPlaybackBackend
-from jukebox.core.models import PlaybackRequest, SpotifyUri, SpotifyUriKind
+from jukebox.core.cards import SpotifyUriKind
+from jukebox.core.models import PlaybackRequest, SpotifyUri
 
 
 class SpotifyPlaybackBackendTests(unittest.TestCase):
@@ -337,6 +338,91 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual(result.reason_code, "spotify_start_not_confirmed")
+
+    def test_enqueue_calls_queue_endpoint(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.enqueue(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+
+        self.assertTrue(result.ok)
+        queue_request = requester.requests[2]
+        self.assertEqual(
+            queue_request.full_url,
+            "https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A6rqhFgbbKwnb9MLmUQDhG6&device_id=device-id",
+        )
+
+    def test_stop_calls_pause_endpoint(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.stop()
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            requester.requests[2].full_url,
+            "https://api.spotify.com/v1/me/player/pause?device_id=device-id",
+        )
+
+    def test_skip_next_calls_next_endpoint(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.skip_next()
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            requester.requests[2].full_url,
+            "https://api.spotify.com/v1/me/player/next?device_id=device-id",
+        )
+
+    def test_set_volume_percent_calls_volume_endpoint(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.set_volume_percent(55)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            requester.requests[2].full_url,
+            "https://api.spotify.com/v1/me/player/volume?volume_percent=55&device_id=device-id",
+        )
 
 
 def _backend(

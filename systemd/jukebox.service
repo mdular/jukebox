@@ -14,6 +14,7 @@ RestartSec=5
 RestartPreventExitStatus=2
 SupplementaryGroups=input
 StandardInput=null
+ReadWritePaths=/var/lib/jukebox
 
 [Install]
 WantedBy=multi-user.target

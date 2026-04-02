@@ -24,6 +24,26 @@ class FromEnvTests(unittest.TestCase):
         self.assertEqual(settings.spotify_confirm_timeout_seconds, 5.0)
         self.assertEqual(settings.spotify_confirm_poll_interval_seconds, 0.25)
         self.assertEqual(settings.health_poll_interval_seconds, 5.0)
+        self.assertEqual(settings.operator_http_bind, "127.0.0.1")
+        self.assertEqual(settings.operator_http_port, 8080)
+        self.assertEqual(settings.operator_state_path, "/var/lib/jukebox/state.json")
+        self.assertEqual(settings.control_debounce_seconds, 1.0)
+        self.assertEqual(settings.playback_mode_default, "replace")
+        self.assertEqual(settings.volume_preset_low_percent, 35)
+        self.assertEqual(settings.volume_preset_medium_percent, 55)
+        self.assertEqual(settings.volume_preset_high_percent, 75)
+        self.assertIsNone(settings.idle_shutdown_seconds)
+        self.assertIsNone(settings.setup_ap_ssid)
+        self.assertIsNone(settings.setup_ap_passphrase)
+        self.assertEqual(settings.setup_fallback_grace_seconds, 120.0)
+        self.assertEqual(settings.wifi_helper_command, "/usr/local/libexec/jukebox-wifi-helper")
+        self.assertEqual(
+            settings.spotifyd_auth_helper_command,
+            "/usr/local/libexec/jukebox-spotifyd-auth-helper",
+        )
+        self.assertEqual(
+            settings.shutdown_helper_command, "/usr/local/libexec/jukebox-shutdown-helper"
+        )
 
     def test_environment_overrides_are_normalized(self) -> None:
         settings = from_env(
@@ -52,6 +72,21 @@ class FromEnvTests(unittest.TestCase):
                 "JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS": "3.5",
                 "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS": "0.5",
                 "JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS": "7.5",
+                "JUKEBOX_OPERATOR_HTTP_BIND": "0.0.0.0",
+                "JUKEBOX_OPERATOR_HTTP_PORT": "9090",
+                "JUKEBOX_OPERATOR_STATE_PATH": "/tmp/jukebox-state.json",
+                "JUKEBOX_CONTROL_DEBOUNCE_SECONDS": "1.25",
+                "JUKEBOX_PLAYBACK_MODE_DEFAULT": "queue_tracks",
+                "JUKEBOX_VOLUME_PRESET_LOW_PERCENT": "20",
+                "JUKEBOX_VOLUME_PRESET_MEDIUM_PERCENT": "50",
+                "JUKEBOX_VOLUME_PRESET_HIGH_PERCENT": "90",
+                "JUKEBOX_IDLE_SHUTDOWN_SECONDS": "1800",
+                "JUKEBOX_SETUP_AP_SSID": "jukebox-setup",
+                "JUKEBOX_SETUP_AP_PASSPHRASE": "secret-pass",
+                "JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS": "180",
+                "JUKEBOX_WIFI_HELPER_COMMAND": "/opt/bin/wifi-helper",
+                "JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND": "/opt/bin/auth-helper",
+                "JUKEBOX_SHUTDOWN_HELPER_COMMAND": "/opt/bin/shutdown-helper",
             }
         )
 
@@ -67,6 +102,21 @@ class FromEnvTests(unittest.TestCase):
         self.assertEqual(settings.spotify_confirm_timeout_seconds, 3.5)
         self.assertEqual(settings.spotify_confirm_poll_interval_seconds, 0.5)
         self.assertEqual(settings.health_poll_interval_seconds, 7.5)
+        self.assertEqual(settings.operator_http_bind, "0.0.0.0")
+        self.assertEqual(settings.operator_http_port, 9090)
+        self.assertEqual(settings.operator_state_path, "/tmp/jukebox-state.json")
+        self.assertEqual(settings.control_debounce_seconds, 1.25)
+        self.assertEqual(settings.playback_mode_default, "queue_tracks")
+        self.assertEqual(settings.volume_preset_low_percent, 20)
+        self.assertEqual(settings.volume_preset_medium_percent, 50)
+        self.assertEqual(settings.volume_preset_high_percent, 90)
+        self.assertEqual(settings.idle_shutdown_seconds, 1800.0)
+        self.assertEqual(settings.setup_ap_ssid, "jukebox-setup")
+        self.assertEqual(settings.setup_ap_passphrase, "secret-pass")
+        self.assertEqual(settings.setup_fallback_grace_seconds, 180.0)
+        self.assertEqual(settings.wifi_helper_command, "/opt/bin/wifi-helper")
+        self.assertEqual(settings.spotifyd_auth_helper_command, "/opt/bin/auth-helper")
+        self.assertEqual(settings.shutdown_helper_command, "/opt/bin/shutdown-helper")
 
     def test_invalid_log_level_raises_config_error(self) -> None:
         with self.assertRaises(ConfigError):
@@ -127,3 +177,23 @@ class FromEnvTests(unittest.TestCase):
     def test_health_poll_interval_must_be_positive(self) -> None:
         with self.assertRaises(ConfigError):
             from_env({"JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS": "0"})
+
+    def test_playback_mode_default_must_be_supported(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_PLAYBACK_MODE_DEFAULT": "queue"})
+
+    def test_operator_http_port_must_be_valid(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_OPERATOR_HTTP_PORT": "70000"})
+
+    def test_volume_presets_must_be_between_zero_and_one_hundred(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_VOLUME_PRESET_HIGH_PERCENT": "101"})
+
+    def test_idle_shutdown_seconds_must_be_positive_if_configured(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_IDLE_SHUTDOWN_SECONDS": "0"})
+
+    def test_setup_ap_passphrase_must_be_long_enough(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_SETUP_AP_PASSPHRASE": "short"})

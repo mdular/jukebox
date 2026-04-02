@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from typing import Final, Literal, Mapping, Optional
 
+from .core.cards import PlaybackMode
+
 LogFormat = Literal["console", "json"]
 PlaybackBackendName = Literal["stub", "spotify"]
 InputBackendName = Literal["stdin", "evdev"]
@@ -29,6 +31,21 @@ JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[str] = (
     "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS"
 )
 JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS: Final[str] = "JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS"
+JUKEBOX_OPERATOR_HTTP_BIND: Final[str] = "JUKEBOX_OPERATOR_HTTP_BIND"
+JUKEBOX_OPERATOR_HTTP_PORT: Final[str] = "JUKEBOX_OPERATOR_HTTP_PORT"
+JUKEBOX_OPERATOR_STATE_PATH: Final[str] = "JUKEBOX_OPERATOR_STATE_PATH"
+JUKEBOX_CONTROL_DEBOUNCE_SECONDS: Final[str] = "JUKEBOX_CONTROL_DEBOUNCE_SECONDS"
+JUKEBOX_PLAYBACK_MODE_DEFAULT: Final[str] = "JUKEBOX_PLAYBACK_MODE_DEFAULT"
+JUKEBOX_VOLUME_PRESET_LOW_PERCENT: Final[str] = "JUKEBOX_VOLUME_PRESET_LOW_PERCENT"
+JUKEBOX_VOLUME_PRESET_MEDIUM_PERCENT: Final[str] = "JUKEBOX_VOLUME_PRESET_MEDIUM_PERCENT"
+JUKEBOX_VOLUME_PRESET_HIGH_PERCENT: Final[str] = "JUKEBOX_VOLUME_PRESET_HIGH_PERCENT"
+JUKEBOX_IDLE_SHUTDOWN_SECONDS: Final[str] = "JUKEBOX_IDLE_SHUTDOWN_SECONDS"
+JUKEBOX_SETUP_AP_SSID: Final[str] = "JUKEBOX_SETUP_AP_SSID"
+JUKEBOX_SETUP_AP_PASSPHRASE: Final[str] = "JUKEBOX_SETUP_AP_PASSPHRASE"
+JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS: Final[str] = "JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS"
+JUKEBOX_WIFI_HELPER_COMMAND: Final[str] = "JUKEBOX_WIFI_HELPER_COMMAND"
+JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND: Final[str] = "JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND"
+JUKEBOX_SHUTDOWN_HELPER_COMMAND: Final[str] = "JUKEBOX_SHUTDOWN_HELPER_COMMAND"
 
 DEFAULT_ENV: Final[str] = "development"
 DEFAULT_LOG_LEVEL: Final[str] = "INFO"
@@ -39,6 +56,20 @@ DEFAULT_INPUT_BACKEND: Final[InputBackendName] = "stdin"
 DEFAULT_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[float] = 5.0
 DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[float] = 0.25
 DEFAULT_HEALTH_POLL_INTERVAL_SECONDS: Final[float] = 5.0
+DEFAULT_OPERATOR_HTTP_BIND: Final[str] = "127.0.0.1"
+DEFAULT_OPERATOR_HTTP_PORT: Final[int] = 8080
+DEFAULT_OPERATOR_STATE_PATH: Final[str] = "/var/lib/jukebox/state.json"
+DEFAULT_CONTROL_DEBOUNCE_SECONDS: Final[float] = 1.0
+DEFAULT_PLAYBACK_MODE: Final[PlaybackMode] = "replace"
+DEFAULT_VOLUME_PRESET_LOW_PERCENT: Final[int] = 35
+DEFAULT_VOLUME_PRESET_MEDIUM_PERCENT: Final[int] = 55
+DEFAULT_VOLUME_PRESET_HIGH_PERCENT: Final[int] = 75
+DEFAULT_SETUP_FALLBACK_GRACE_SECONDS: Final[float] = 120.0
+DEFAULT_WIFI_HELPER_COMMAND: Final[str] = "/usr/local/libexec/jukebox-wifi-helper"
+DEFAULT_SPOTIFYD_AUTH_HELPER_COMMAND: Final[str] = (
+    "/usr/local/libexec/jukebox-spotifyd-auth-helper"
+)
+DEFAULT_SHUTDOWN_HELPER_COMMAND: Final[str] = "/usr/local/libexec/jukebox-shutdown-helper"
 
 _ALLOWED_LOG_LEVELS: Final[frozenset[str]] = frozenset(
     {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
@@ -46,6 +77,7 @@ _ALLOWED_LOG_LEVELS: Final[frozenset[str]] = frozenset(
 _ALLOWED_LOG_FORMATS: Final[frozenset[str]] = frozenset({"console", "json"})
 _ALLOWED_PLAYBACK_BACKENDS: Final[frozenset[str]] = frozenset({"stub", "spotify"})
 _ALLOWED_INPUT_BACKENDS: Final[frozenset[str]] = frozenset({"stdin", "evdev"})
+_ALLOWED_PLAYBACK_MODES: Final[frozenset[str]] = frozenset({"replace", "queue_tracks"})
 
 
 class ConfigError(ValueError):
@@ -71,6 +103,21 @@ class Settings:
     spotify_confirm_timeout_seconds: float
     spotify_confirm_poll_interval_seconds: float
     health_poll_interval_seconds: float
+    operator_http_bind: str
+    operator_http_port: int
+    operator_state_path: str
+    control_debounce_seconds: float
+    playback_mode_default: PlaybackMode
+    volume_preset_low_percent: int
+    volume_preset_medium_percent: int
+    volume_preset_high_percent: int
+    idle_shutdown_seconds: float | None
+    setup_ap_ssid: str | None
+    setup_ap_passphrase: str | None
+    setup_fallback_grace_seconds: float
+    wifi_helper_command: str
+    spotifyd_auth_helper_command: str
+    shutdown_helper_command: str
 
 
 def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
@@ -104,6 +151,53 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS,
         default=DEFAULT_HEALTH_POLL_INTERVAL_SECONDS,
     )
+    operator_http_bind = _read_non_empty_string(
+        source, JUKEBOX_OPERATOR_HTTP_BIND, default=DEFAULT_OPERATOR_HTTP_BIND
+    )
+    operator_http_port = _read_port(source, JUKEBOX_OPERATOR_HTTP_PORT)
+    operator_state_path = _read_non_empty_string(
+        source, JUKEBOX_OPERATOR_STATE_PATH, default=DEFAULT_OPERATOR_STATE_PATH
+    )
+    control_debounce_seconds = _read_positive_float(
+        source,
+        JUKEBOX_CONTROL_DEBOUNCE_SECONDS,
+        default=DEFAULT_CONTROL_DEBOUNCE_SECONDS,
+    )
+    playback_mode_default = _read_playback_mode_default(source)
+    volume_preset_low_percent = _read_percentage(
+        source,
+        JUKEBOX_VOLUME_PRESET_LOW_PERCENT,
+        default=DEFAULT_VOLUME_PRESET_LOW_PERCENT,
+    )
+    volume_preset_medium_percent = _read_percentage(
+        source,
+        JUKEBOX_VOLUME_PRESET_MEDIUM_PERCENT,
+        default=DEFAULT_VOLUME_PRESET_MEDIUM_PERCENT,
+    )
+    volume_preset_high_percent = _read_percentage(
+        source,
+        JUKEBOX_VOLUME_PRESET_HIGH_PERCENT,
+        default=DEFAULT_VOLUME_PRESET_HIGH_PERCENT,
+    )
+    idle_shutdown_seconds = _read_optional_positive_float(source, JUKEBOX_IDLE_SHUTDOWN_SECONDS)
+    setup_ap_ssid = _read_optional_value(source, JUKEBOX_SETUP_AP_SSID)
+    setup_ap_passphrase = _read_optional_value(source, JUKEBOX_SETUP_AP_PASSPHRASE)
+    setup_fallback_grace_seconds = _read_positive_float(
+        source,
+        JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS,
+        default=DEFAULT_SETUP_FALLBACK_GRACE_SECONDS,
+    )
+    wifi_helper_command = _read_non_empty_string(
+        source, JUKEBOX_WIFI_HELPER_COMMAND, default=DEFAULT_WIFI_HELPER_COMMAND
+    )
+    spotifyd_auth_helper_command = _read_non_empty_string(
+        source,
+        JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND,
+        default=DEFAULT_SPOTIFYD_AUTH_HELPER_COMMAND,
+    )
+    shutdown_helper_command = _read_non_empty_string(
+        source, JUKEBOX_SHUTDOWN_HELPER_COMMAND, default=DEFAULT_SHUTDOWN_HELPER_COMMAND
+    )
     settings = Settings(
         environment=environment,
         log_level=log_level,
@@ -120,6 +214,21 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         spotify_confirm_timeout_seconds=spotify_confirm_timeout_seconds,
         spotify_confirm_poll_interval_seconds=spotify_confirm_poll_interval_seconds,
         health_poll_interval_seconds=health_poll_interval_seconds,
+        operator_http_bind=operator_http_bind,
+        operator_http_port=operator_http_port,
+        operator_state_path=operator_state_path,
+        control_debounce_seconds=control_debounce_seconds,
+        playback_mode_default=playback_mode_default,
+        volume_preset_low_percent=volume_preset_low_percent,
+        volume_preset_medium_percent=volume_preset_medium_percent,
+        volume_preset_high_percent=volume_preset_high_percent,
+        idle_shutdown_seconds=idle_shutdown_seconds,
+        setup_ap_ssid=setup_ap_ssid,
+        setup_ap_passphrase=setup_ap_passphrase,
+        setup_fallback_grace_seconds=setup_fallback_grace_seconds,
+        wifi_helper_command=wifi_helper_command,
+        spotifyd_auth_helper_command=spotifyd_auth_helper_command,
+        shutdown_helper_command=shutdown_helper_command,
     )
     _validate_backend_settings(settings)
     return settings
@@ -192,6 +301,36 @@ def _read_input_backend(source: Mapping[str, str]) -> InputBackendName:
     return value  # type: ignore[return-value]
 
 
+def _read_non_empty_string(source: Mapping[str, str], key: str, *, default: str) -> str:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return default
+
+    value = raw_value.strip()
+    if not value:
+        raise ConfigError(f"{key} must not be empty.")
+    return value
+
+
+def _read_optional_positive_float(source: Mapping[str, str], key: str) -> float | None:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return None
+
+    value = raw_value.strip()
+    if value == "":
+        return None
+
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ConfigError(f"{key} must be a positive float.") from exc
+
+    if parsed <= 0:
+        raise ConfigError(f"{key} must be a positive float.")
+    return parsed
+
+
 def _read_positive_float(source: Mapping[str, str], key: str, *, default: float) -> float:
     raw_value = source.get(key)
     if raw_value is None:
@@ -217,6 +356,48 @@ def _read_optional_value(source: Mapping[str, str], key: str) -> str | None:
     return value or None
 
 
+def _read_playback_mode_default(source: Mapping[str, str]) -> PlaybackMode:
+    raw_value = source.get(JUKEBOX_PLAYBACK_MODE_DEFAULT)
+    if raw_value is None:
+        return DEFAULT_PLAYBACK_MODE
+
+    value = raw_value.strip().lower()
+    if value not in _ALLOWED_PLAYBACK_MODES:
+        allowed = ", ".join(sorted(_ALLOWED_PLAYBACK_MODES))
+        raise ConfigError(f"{JUKEBOX_PLAYBACK_MODE_DEFAULT} must be one of: {allowed}.")
+    return value  # type: ignore[return-value]
+
+
+def _read_port(source: Mapping[str, str], key: str) -> int:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return DEFAULT_OPERATOR_HTTP_PORT
+
+    value = raw_value.strip()
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ConfigError(f"{key} must be an integer port between 1 and 65535.") from exc
+    if parsed < 1 or parsed > 65535:
+        raise ConfigError(f"{key} must be an integer port between 1 and 65535.")
+    return parsed
+
+
+def _read_percentage(source: Mapping[str, str], key: str, *, default: int) -> int:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return default
+
+    value = raw_value.strip()
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ConfigError(f"{key} must be an integer between 0 and 100.") from exc
+    if parsed < 0 or parsed > 100:
+        raise ConfigError(f"{key} must be an integer between 0 and 100.")
+    return parsed
+
+
 def _validate_backend_settings(settings: Settings) -> None:
     if settings.spotify_confirm_poll_interval_seconds > settings.spotify_confirm_timeout_seconds:
         raise ConfigError(
@@ -227,6 +408,14 @@ def _validate_backend_settings(settings: Settings) -> None:
     if settings.input_backend == "evdev" and settings.scanner_device is None:
         raise ConfigError(
             f"{JUKEBOX_INPUT_BACKEND}=evdev requires {JUKEBOX_SCANNER_DEVICE}."
+        )
+
+    if (
+        settings.setup_ap_passphrase is not None
+        and len(settings.setup_ap_passphrase) < 8
+    ):
+        raise ConfigError(
+            f"{JUKEBOX_SETUP_AP_PASSPHRASE} must be at least 8 characters long."
         )
 
     if settings.playback_backend != "spotify":

@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 
+from .adapters.action_router import ActionRouter
 from .adapters.input import ReadableInput
 from .adapters.input_evdev import EvdevScannerInput
 from .adapters.playback_spotify import SpotifyPlaybackBackend
 from .adapters.playback_stub import StubPlaybackBackend
+from .adapters.system_helpers import CommandSystemHelpers
 from .config import Settings
-from .core.models import PlaybackBackend
+from .core.models import EventSink, PlaybackBackend
+from .feedback_state import FeedbackStateTracker
+from .operator_server import OperatorHttpServer
+from .operator_state import OperatorStateStore
 from .runtime_health import DependencyStatus, HealthMonitor, RuntimeHealthMonitor
+from .setup_mode import SetupModeManager
 
 
 @dataclass(frozen=True)
@@ -22,6 +28,10 @@ class RuntimeDependencies:
     playback_backend: PlaybackBackend
     health_monitor: HealthMonitor
     source: str
+    action_router: ActionRouter | None = None
+    operator_state: OperatorStateStore | None = None
+    event_sinks: tuple[EventSink, ...] = ()
+    services: tuple["LifecycleService", ...] = ()
 
 
 @dataclass(frozen=True)
@@ -39,14 +49,59 @@ class StartupError(RuntimeError):
         return self.message
 
 
+class LifecycleService(Protocol):
+    """Lifecycle contract for runtime-owned background services."""
+
+    def start(self) -> None:
+        """Start the service."""
+
+    def stop(self) -> None:
+        """Stop the service."""
+
+
 def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDependencies:
     """Build runtime adapters and perform startup probes."""
 
     input_stream = _build_input_backend(settings, default_stdin)
     playback_backend = _build_playback_backend(settings)
+    operator_state = OperatorStateStore(settings.operator_state_path)
+    feedback_tracker = FeedbackStateTracker()
+    system_helpers = CommandSystemHelpers(
+        wifi_helper_command=settings.wifi_helper_command,
+        spotifyd_auth_helper_command=settings.spotifyd_auth_helper_command,
+        shutdown_helper_command=settings.shutdown_helper_command,
+    )
+    setup_mode = SetupModeManager(operator_state=operator_state, wifi_helper=system_helpers)
+    try:
+        setup_mode.initialize()
+    except RuntimeError:
+        pass
+    action_router = ActionRouter(
+        playback_backend=playback_backend,
+        operator_state=operator_state,
+        system_helpers=system_helpers,
+        volume_presets={
+            "low": settings.volume_preset_low_percent,
+            "medium": settings.volume_preset_medium_percent,
+            "high": settings.volume_preset_high_percent,
+        },
+    )
+    operator_server = OperatorHttpServer(
+        bind=settings.operator_http_bind,
+        port=settings.operator_http_port,
+        feedback_snapshot=feedback_tracker.snapshot,
+        runtime_status=lambda: {
+            "playback_mode": operator_state.load().playback_mode,
+            "setup_required": setup_mode.status().code == "setup_required",
+            "auth_required": setup_mode.status().code == "auth_required",
+        },
+        submit_wifi=system_helpers.apply_wifi,
+        start_auth=system_helpers.start_auth,
+    )
     health_monitor = RuntimeHealthMonitor(
         scanner_status=_build_input_status_source(settings, input_stream).status,
         playback_status=cast(_StatusSource, playback_backend).status,
+        setup_status=setup_mode.status,
         poll_interval_seconds=settings.health_poll_interval_seconds,
         source=settings.input_backend,
     )
@@ -56,6 +111,10 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
         playback_backend=playback_backend,
         health_monitor=health_monitor,
         source=settings.input_backend,
+        action_router=action_router,
+        operator_state=operator_state,
+        event_sinks=(feedback_tracker,),
+        services=(operator_server,),
     )
 
 

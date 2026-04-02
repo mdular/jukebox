@@ -61,3 +61,27 @@ class ConfigureLoggingTests(unittest.TestCase):
         self.assertEqual(payload["reason_code"], "spotify_no_active_device")
         self.assertEqual(payload["device_name"], "jukebox")
         self.assertEqual(payload["source"], "evdev")
+
+    def test_structured_event_logging_preserves_epic_four_metadata(self) -> None:
+        stream = io.StringIO()
+        configure_logging(level="INFO", log_format="json", environment="test", stream=stream)
+
+        event_logger = StructuredEventLogger()
+        event_logger.handle(
+            ControllerEvent(
+                code="action_succeeded",
+                message="playback mode set to queue_tracks",
+                card_kind="action",
+                action_name="mode.queue",
+                action_scope="child",
+                playback_mode="queue_tracks",
+                setup_mode="setup_ap",
+            )
+        )
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(payload["card_kind"], "action")
+        self.assertEqual(payload["action_name"], "mode.queue")
+        self.assertEqual(payload["action_scope"], "child")
+        self.assertEqual(payload["playback_mode"], "queue_tracks")
+        self.assertEqual(payload["setup_mode"], "setup_ap")

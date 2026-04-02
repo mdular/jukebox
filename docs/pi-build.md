@@ -24,4 +24,5 @@ Prototype-specific instance details such as the exact USB audio dongle model or 
 
 - The current V1 baseline remains a USB sound card feeding an external powered speaker.
 - EPIC 4 keeps volume control external at the speaker rather than adding built-in volume hardware.
+- EPIC 4 volume preset cards are software-side Spotify Connect presets only; they do not replace the speaker's own controls.
 - Internal speakers, amplifier integration, and enclosure acoustics remain separate future work.

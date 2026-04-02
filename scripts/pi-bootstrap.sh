@@ -13,6 +13,14 @@ SSH_TARGET=$PI_USER@$PI_HOST
 
 scp -P "$PI_PORT" "$PROJECT_ROOT/systemd/jukebox.env.example" \
   "$SSH_TARGET:/tmp/jukebox.env.example"
+scp -P "$PI_PORT" "$PROJECT_ROOT/scripts/runtime/jukebox-wifi-helper.sh" \
+  "$SSH_TARGET:/tmp/jukebox-wifi-helper.sh"
+scp -P "$PI_PORT" "$PROJECT_ROOT/scripts/runtime/jukebox-spotifyd-auth-helper.sh" \
+  "$SSH_TARGET:/tmp/jukebox-spotifyd-auth-helper.sh"
+scp -P "$PI_PORT" "$PROJECT_ROOT/scripts/runtime/jukebox-shutdown-helper.sh" \
+  "$SSH_TARGET:/tmp/jukebox-shutdown-helper.sh"
+scp -P "$PI_PORT" "$PROJECT_ROOT/sudoers/jukebox-maintenance" \
+  "$SSH_TARGET:/tmp/jukebox-maintenance"
 
 ssh -p "$PI_PORT" "$SSH_TARGET" /bin/sh <<EOF
 set -eu
@@ -37,9 +45,15 @@ if [ '$RECEIVER_SERVICE_NAME' = 'spotifyd.service' ]; then
 fi
 sudo mkdir -p '$PI_ROOT' /etc/jukebox
 sudo chown '$PI_USER':'$PI_USER' '$PI_ROOT'
+sudo mkdir -p /usr/local/libexec /var/lib/jukebox
+sudo install -m 755 /tmp/jukebox-wifi-helper.sh /usr/local/libexec/jukebox-wifi-helper
+sudo install -m 755 /tmp/jukebox-spotifyd-auth-helper.sh /usr/local/libexec/jukebox-spotifyd-auth-helper
+sudo install -m 755 /tmp/jukebox-shutdown-helper.sh /usr/local/libexec/jukebox-shutdown-helper
+sudo install -m 440 /tmp/jukebox-maintenance /etc/sudoers.d/jukebox-maintenance
 if [ ! -f /etc/jukebox/jukebox.env ]; then
   sudo install -m 640 /tmp/jukebox.env.example /etc/jukebox/jukebox.env
   echo 'Created /etc/jukebox/jukebox.env from the example template.'
 fi
 rm -f /tmp/jukebox.env.example
+rm -f /tmp/jukebox-wifi-helper.sh /tmp/jukebox-spotifyd-auth-helper.sh /tmp/jukebox-shutdown-helper.sh /tmp/jukebox-maintenance
 EOF

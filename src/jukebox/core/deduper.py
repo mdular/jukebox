@@ -37,3 +37,7 @@ class DuplicateGate:
 
         self._last_payload = payload
         self._last_success_monotonic = self._clock()
+
+
+class ActionDebounceGate(DuplicateGate):
+    """Reuse duplicate-gate timing for idempotent action-card scans."""

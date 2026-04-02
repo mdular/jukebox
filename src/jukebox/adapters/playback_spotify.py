@@ -133,6 +133,105 @@ class SpotifyPlaybackBackend:
         assert last_result is not None
         return last_result
 
+    def enqueue(self, request: PlaybackRequest) -> PlaybackResult:
+        """Queue one track on the target device."""
+
+        if request.uri.kind != "track":
+            return PlaybackResult(
+                ok=False,
+                backend="spotify",
+                reason_code="unsupported_content",
+                message="Spotify queue only supports track URIs.",
+            )
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            return access_token_or_error
+
+        target_device_or_error = self._resolve_target_device(access_token_or_error)
+        if isinstance(target_device_or_error, PlaybackResult):
+            return target_device_or_error
+
+        return self._device_command(
+            access_token_or_error,
+            target_device_or_error,
+            path="queue",
+            method="POST",
+            query={"uri": request.uri.raw, "device_id": target_device_or_error.device_id},
+            operation="queue",
+        )
+
+    def stop(self) -> PlaybackResult:
+        """Pause playback on the target device."""
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            return access_token_or_error
+
+        target_device_or_error = self._resolve_target_device(access_token_or_error)
+        if isinstance(target_device_or_error, PlaybackResult):
+            return target_device_or_error
+
+        return self._device_command(
+            access_token_or_error,
+            target_device_or_error,
+            path="pause",
+            method="PUT",
+            query={"device_id": target_device_or_error.device_id},
+            operation="pause",
+        )
+
+    def skip_next(self) -> PlaybackResult:
+        """Advance to the next track on the target device."""
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            return access_token_or_error
+
+        target_device_or_error = self._resolve_target_device(access_token_or_error)
+        if isinstance(target_device_or_error, PlaybackResult):
+            return target_device_or_error
+
+        return self._device_command(
+            access_token_or_error,
+            target_device_or_error,
+            path="next",
+            method="POST",
+            query={"device_id": target_device_or_error.device_id},
+            operation="next",
+        )
+
+    def set_volume_percent(self, percent: int) -> PlaybackResult:
+        """Apply a volume preset percentage on the target device."""
+
+        if percent < 0 or percent > 100:
+            return PlaybackResult(
+                ok=False,
+                backend="spotify",
+                reason_code="volume_control_unavailable",
+                message="Spotify volume percent must be between 0 and 100.",
+            )
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            return access_token_or_error
+
+        target_device_or_error = self._resolve_target_device(access_token_or_error)
+        if isinstance(target_device_or_error, PlaybackResult):
+            return target_device_or_error
+
+        return self._device_command(
+            access_token_or_error,
+            target_device_or_error,
+            path="volume",
+            method="PUT",
+            query={
+                "volume_percent": str(percent),
+                "device_id": target_device_or_error.device_id,
+            },
+            operation="volume",
+        )
+
     def _refresh_access_token(self) -> str | PlaybackResult:
         credentials = f"{self._client_id}:{self._client_secret}".encode("utf-8")
         encoded_credentials = base64.b64encode(credentials).decode("ascii")
@@ -385,6 +484,54 @@ class SpotifyPlaybackBackend:
             device_name=target_device.name,
         )
 
+    def _device_command(
+        self,
+        access_token: str,
+        target_device: _TargetDevice,
+        *,
+        path: str,
+        method: str,
+        query: dict[str, str],
+        operation: str,
+    ) -> PlaybackResult:
+        url = f"https://api.spotify.com/v1/me/player/{path}?{urlencode(query)}"
+        command_request = Request(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            method=method,
+        )
+
+        try:
+            response = self._requester(command_request, self._timeout_seconds)
+        except HTTPError as exc:
+            result = self._map_http_error(exc, operation=operation)
+            return PlaybackResult(
+                ok=False,
+                backend=result.backend,
+                reason_code=result.reason_code,
+                message=result.message,
+                device_name=target_device.name,
+            )
+        except URLError as exc:
+            result = self._network_error(exc)
+            return PlaybackResult(
+                ok=False,
+                backend=result.backend,
+                reason_code=result.reason_code,
+                message=result.message,
+                device_name=target_device.name,
+            )
+
+        if 200 <= response.status < 300:
+            return PlaybackResult(ok=True, backend="spotify", device_name=target_device.name)
+        return PlaybackResult(
+            ok=False,
+            backend="spotify",
+            reason_code=self._reason_code_for_operation(operation),
+            message=f"Unexpected Spotify response status: {response.status}.",
+            device_name=target_device.name,
+        )
+
     def _get_current_playback(self, access_token: str) -> dict[str, object] | None | PlaybackResult:
         playback_request = Request(
             "https://api.spotify.com/v1/me/player",
@@ -457,8 +604,14 @@ class SpotifyPlaybackBackend:
             reason_code = "connect_transfer_failed"
         elif operation == "start":
             reason_code = "spotify_start_failed"
+        elif operation in {"pause", "next"} and exc.code == 404:
+            reason_code = "no_active_playback"
+        elif operation == "volume" and exc.code in {403, 404}:
+            reason_code = "volume_control_unavailable"
+        elif operation == "queue":
+            reason_code = "spotify_queue_failed"
         else:
-            reason_code = "network_discovery_failed"
+            reason_code = self._reason_code_for_operation(operation)
         return PlaybackResult(
             ok=False,
             backend="spotify",
@@ -489,6 +642,19 @@ class SpotifyPlaybackBackend:
             backend=result.backend,
             device_name=result.device_name,
         )
+
+    def _reason_code_for_operation(self, operation: str) -> str:
+        if operation == "start":
+            return "spotify_start_failed"
+        if operation == "queue":
+            return "spotify_queue_failed"
+        if operation == "pause":
+            return "no_active_playback"
+        if operation == "next":
+            return "no_active_playback"
+        if operation == "volume":
+            return "volume_control_unavailable"
+        return "network_discovery_failed"
 
 
 def _default_requester(request: Request, timeout_seconds: float) -> ResponseLike:

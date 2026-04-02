@@ -10,10 +10,12 @@ from .core.models import ControllerEvent, EventSink
 
 _STATUS_PRIORITY = {
     "scanner_unavailable": 0,
-    "controller_auth_unavailable": 1,
-    "network_unavailable": 2,
-    "receiver_unavailable": 3,
-    "ready": 4,
+    "setup_required": 1,
+    "auth_required": 2,
+    "controller_auth_unavailable": 3,
+    "network_unavailable": 4,
+    "receiver_unavailable": 5,
+    "ready": 6,
 }
 
 
@@ -48,11 +50,13 @@ class RuntimeHealthMonitor:
         *,
         scanner_status: Callable[[], DependencyStatus],
         playback_status: Callable[[], DependencyStatus],
+        setup_status: Callable[[], DependencyStatus] | None = None,
         poll_interval_seconds: float,
         source: str | None = None,
     ) -> None:
         self._scanner_status = scanner_status
         self._playback_status = playback_status
+        self._setup_status = setup_status
         self._poll_interval_seconds = poll_interval_seconds
         self._source = source
         self._lock = threading.Lock()
@@ -121,7 +125,10 @@ class RuntimeHealthMonitor:
     def _current_status(self) -> DependencyStatus:
         scanner_status = self._scanner_status()
         playback_status = self._playback_status()
-        degraded = [status for status in (scanner_status, playback_status) if not status.ready]
+        statuses = [scanner_status, playback_status]
+        if self._setup_status is not None:
+            statuses.append(self._setup_status())
+        degraded = [status for status in statuses if not status.ready]
         if not degraded:
             return DependencyStatus(
                 code="ready",

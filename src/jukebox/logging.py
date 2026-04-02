@@ -12,11 +12,16 @@ from .core.models import ControllerEvent
 _EVENT_FIELDS: Final[tuple[str, ...]] = (
     "event",
     "payload",
+    "card_kind",
     "uri_kind",
+    "action_name",
+    "action_scope",
     "backend",
     "reason_code",
     "device_name",
     "source",
+    "playback_mode",
+    "setup_mode",
 )
 
 
@@ -54,7 +59,19 @@ class StructuredEventLogger:
         """Log one controller event with structured metadata."""
 
         extra = {"event": event.code}
-        for key in ("payload", "uri_kind", "backend", "reason_code", "device_name", "source"):
+        for key in (
+            "payload",
+            "card_kind",
+            "uri_kind",
+            "action_name",
+            "action_scope",
+            "backend",
+            "reason_code",
+            "device_name",
+            "source",
+            "playback_mode",
+            "setup_mode",
+        ):
             value = getattr(event, key)
             if value is not None:
                 extra[key] = value

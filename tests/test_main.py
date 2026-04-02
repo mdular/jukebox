@@ -1,11 +1,14 @@
 """Smoke tests for the application entrypoint."""
 
 import io
+import tempfile
 import unittest
 from pathlib import Path
 
+from jukebox.adapters.action_router import ActionRouter
 from jukebox.core.models import ControllerEvent
 from jukebox.main import main
+from jukebox.operator_state import OperatorStateStore
 from jukebox.runtime import RuntimeDependencies, StartupError
 
 
@@ -139,6 +142,74 @@ class MainTests(unittest.TestCase):
         self.assertEqual(exit_code, 130)
         self.assertIn("[READY] waiting for scan input", stdout_buffer.getvalue())
 
+    def test_main_starts_and_stops_runtime_services(self) -> None:
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
+        service = _FakeLifecycleService()
+
+        exit_code = main(
+            stdin=io.StringIO(""),
+            stdout=stdout_buffer,
+            stderr=stderr_buffer,
+            env={"JUKEBOX_ENV": "test"},
+            runtime_factory=lambda settings, default_stdin: RuntimeDependencies(
+                input_stream=io.StringIO(""),
+                playback_backend=_StubBackend(),
+                health_monitor=_FakeHealthMonitor(
+                    [
+                        ControllerEvent(
+                            code="ready",
+                            message="waiting for scan input",
+                            source="stdin",
+                        )
+                    ]
+                ),
+                source="stdin",
+                services=(service,),
+            ),
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(service.started)
+        self.assertTrue(service.stopped)
+
+    def test_main_processes_action_cards_when_runtime_provides_epic_four_dependencies(self) -> None:
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = OperatorStateStore(Path(temp_dir) / "state.json")
+            exit_code = main(
+                stdin=io.StringIO("jukebox:mode:queue\n"),
+                stdout=stdout_buffer,
+                stderr=stderr_buffer,
+                env={"JUKEBOX_ENV": "test"},
+                runtime_factory=lambda settings, default_stdin: RuntimeDependencies(
+                    input_stream=io.StringIO("jukebox:mode:queue\n"),
+                    playback_backend=_StubBackend(),
+                    health_monitor=_FakeHealthMonitor(
+                        [
+                            ControllerEvent(
+                                code="ready",
+                                message="waiting for scan input",
+                                source="stdin",
+                            )
+                        ]
+                    ),
+                    source="stdin",
+                    action_router=ActionRouter(
+                        playback_backend=_StubBackend(),
+                        operator_state=store,
+                        system_helpers=_FakeSystemHelpers(),
+                        volume_presets={"low": 35, "medium": 55, "high": 75},
+                    ),
+                    operator_state=store,
+                ),
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("[ACTION] mode.queue", stdout_buffer.getvalue())
+
 
 class _InterruptingInput:
     def readline(self) -> str:
@@ -147,12 +218,34 @@ class _InterruptingInput:
 
 class _StubBackend:
     def probe(self):  # type: ignore[no-untyped-def]
-        return None
+        from jukebox.core.models import PlaybackResult
+
+        return PlaybackResult(ok=True, backend="stub", message="ready")
 
     def dispatch(self, request):  # type: ignore[no-untyped-def]
         from jukebox.core.models import PlaybackResult
 
         return PlaybackResult(ok=True, backend="stub", message=f"played {request.uri.raw}")
+
+    def enqueue(self, request):  # type: ignore[no-untyped-def]
+        from jukebox.core.models import PlaybackResult
+
+        return PlaybackResult(ok=True, backend="stub", message=f"queued {request.uri.raw}")
+
+    def stop(self):  # type: ignore[no-untyped-def]
+        from jukebox.core.models import PlaybackResult
+
+        return PlaybackResult(ok=True, backend="stub", message="stopped")
+
+    def skip_next(self):  # type: ignore[no-untyped-def]
+        from jukebox.core.models import PlaybackResult
+
+        return PlaybackResult(ok=True, backend="stub", message="skipped")
+
+    def set_volume_percent(self, percent):  # type: ignore[no-untyped-def]
+        from jukebox.core.models import PlaybackResult
+
+        return PlaybackResult(ok=True, backend="stub", message=f"volume {percent}")
 
 
 class _FakeHealthMonitor:
@@ -169,6 +262,26 @@ class _FakeHealthMonitor:
 
     def stop(self) -> None:
         self.stopped = True
+
+
+class _FakeLifecycleService:
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class _FakeSystemHelpers:
+    def reset_wifi(self) -> tuple[bool, str]:
+        return True, "wifi reset"
+
+    def request_shutdown(self, *, reason: str) -> tuple[bool, str]:
+        return True, f"shutdown requested: {reason}"
 
 
 def _failing_runtime_factory(settings, default_stdin):  # type: ignore[no-untyped-def]

@@ -18,6 +18,16 @@ This guide covers:
 This guide does not automate SD card imaging or physical speaker/scanner installation.
 For the current prototype parts and scanner-specific notes, see [docs/pi-build.md](/Users/markus/Workspace/jukebox/docs/pi-build.md).
 
+## EPIC 4 Maintenance Additions
+
+The EPIC 4 runtime adds:
+
+- a maintenance HTTP surface on `JUKEBOX_OPERATOR_HTTP_PORT`
+- operator and control cards under the `jukebox:<group>:<action>` namespace
+- persisted non-secret state under `/var/lib/jukebox/state.json`
+- helper-script install targets under `/usr/local/libexec`
+- a `sudoers` policy file for Wi-Fi, auth, and shutdown helper commands
+
 ## 1. Flash Raspberry Pi OS Lite
 
 Use Raspberry Pi Imager and select Raspberry Pi OS Lite for Raspberry Pi 3.
@@ -92,6 +102,8 @@ sudo apt-get update
 sudo apt-get upgrade -y
 sudo apt-get install -y python3-venv python3-pip python3-dev build-essential libevdev-dev alsa-utils
 ```
+
+EPIC 4 also expects `/var/lib/jukebox` to exist and the helper scripts from `scripts/runtime/` to be installed under `/usr/local/libexec`. The bootstrap script now installs those assets and the matching `sudoers` entry.
 
 `alsa-utils` is included so you can verify the USB sound card output before you deploy the jukebox service.
 

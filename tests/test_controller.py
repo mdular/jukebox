@@ -1,10 +1,14 @@
 """Tests for controller orchestration."""
 
+import tempfile
 import unittest
+from pathlib import Path
 
+from jukebox.adapters.action_router import ActionRouter
 from jukebox.core.controller import Controller
 from jukebox.core.deduper import DuplicateGate
 from jukebox.core.models import ControllerEvent, PlaybackRequest, PlaybackResult
+from jukebox.operator_state import OperatorStateStore
 
 
 class ControllerTests(unittest.TestCase):
@@ -139,11 +143,93 @@ class ControllerTests(unittest.TestCase):
 
         self.assertEqual([event.code for event in sink.events], ["idle"])
 
+    def test_action_card_is_routed_and_emits_action_events(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            backend = _RecordingBackend([])
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([])),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=OperatorStateStore(Path(temp_dir) / "state.json"),
+                    system_helpers=_SystemHelpers(),
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=OperatorStateStore(Path(temp_dir) / "state.json"),
+                event_sinks=[sink],
+            )
+
+            controller.process_line("jukebox:mode:queue\n")
+
+            self.assertEqual(
+                [event.code for event in sink.events],
+                [
+                    "scan_received",
+                    "action_card_accepted",
+                    "action_succeeded",
+                    "playback_mode_changed",
+                ],
+            )
+            self.assertEqual(backend.requests, [])
+
+    def test_track_scan_uses_queue_backend_when_playback_mode_is_queue_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            backend = _RecordingBackend([PlaybackResult(ok=True, backend="stub", message="queued")])
+            store = OperatorStateStore(Path(temp_dir) / "state.json")
+            store.set_playback_mode("queue_tracks")
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([10.0])),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=store,
+                    system_helpers=_SystemHelpers(),
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=store,
+                event_sinks=[sink],
+            )
+
+            controller.process_line("spotify:track:6rqhFgbbKwnb9MLmUQDhG6\n")
+
+            self.assertEqual(backend.enqueued[0].uri.kind, "track")
+            self.assertEqual(sink.events[-1].code, "playback_enqueued")
+
+    def test_queue_mode_falls_back_to_replace_for_album_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            backend = _RecordingBackend([PlaybackResult(ok=True, backend="stub", message="played")])
+            store = OperatorStateStore(Path(temp_dir) / "state.json")
+            store.set_playback_mode("queue_tracks")
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([10.0])),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=store,
+                    system_helpers=_SystemHelpers(),
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=store,
+                event_sinks=[sink],
+            )
+
+            controller.process_line("spotify:album:1ATL5GLyefJaxhQzSPVrLX\n")
+
+            self.assertEqual(len(backend.requests), 1)
+            self.assertEqual(
+                [event.code for event in sink.events[-3:]],
+                ["scan_accepted", "playback_mode_fallback", "playback_dispatch_succeeded"],
+            )
+
 
 class _RecordingBackend:
     def __init__(self, results: list[PlaybackResult]) -> None:
         self._results = results
         self.requests: list[PlaybackRequest] = []
+        self.enqueued: list[PlaybackRequest] = []
 
     def probe(self) -> PlaybackResult:
         return PlaybackResult(ok=True, backend="stub", message="ready")
@@ -153,6 +239,21 @@ class _RecordingBackend:
         if self._results:
             return self._results.pop(0)
         return PlaybackResult(ok=True, backend="stub", message="played")
+
+    def enqueue(self, request: PlaybackRequest) -> PlaybackResult:
+        self.enqueued.append(request)
+        if self._results:
+            return self._results.pop(0)
+        return PlaybackResult(ok=True, backend="stub", message="queued")
+
+    def stop(self) -> PlaybackResult:
+        return PlaybackResult(ok=True, backend="stub", message="stopped")
+
+    def skip_next(self) -> PlaybackResult:
+        return PlaybackResult(ok=True, backend="stub", message="skipped")
+
+    def set_volume_percent(self, percent: int) -> PlaybackResult:
+        return PlaybackResult(ok=True, backend="stub", message=str(percent))
 
 
 class _RecordingSink:
@@ -169,3 +270,11 @@ class _FakeClock:
 
     def __call__(self) -> float:
         return self._values.pop(0)
+
+
+class _SystemHelpers:
+    def reset_wifi(self) -> tuple[bool, str]:
+        return True, "wifi reset"
+
+    def request_shutdown(self, *, reason: str) -> tuple[bool, str]:
+        return True, f"shutdown requested: {reason}"

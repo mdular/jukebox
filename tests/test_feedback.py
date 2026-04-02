@@ -36,3 +36,39 @@ class TerminalStatusSinkTests(unittest.TestCase):
                 "[NETWORK] unavailable: network_discovery_failed",
             ],
         )
+
+    def test_renders_setup_auth_and_action_events(self) -> None:
+        stream = io.StringIO()
+        sink = TerminalStatusSink(stream)
+
+        sink.handle(
+            ControllerEvent(
+                code="setup_required",
+                message="setup required",
+                setup_mode="setup_ap",
+            )
+        )
+        sink.handle(
+            ControllerEvent(
+                code="action_succeeded",
+                message="playback mode set to queue_tracks",
+                action_name="mode.queue",
+            )
+        )
+        sink.handle(
+            ControllerEvent(
+                code="playback_enqueued",
+                message="queued track",
+                backend="spotify",
+                uri_kind="track",
+            )
+        )
+
+        self.assertEqual(
+            stream.getvalue().splitlines(),
+            [
+                "[SETUP] required: setup_ap",
+                "[ACTION] mode.queue",
+                "[QUEUE spotify] queued track",
+            ],
+        )

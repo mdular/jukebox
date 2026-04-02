@@ -156,6 +156,50 @@ class RuntimeHealthMonitorTests(unittest.TestCase):
         self.assertEqual(second_event.code, "network_unavailable")
         self.assertEqual(second_event.reason_code, "spotify_rate_limited")
 
+    def test_setup_required_blocks_ready(self) -> None:
+        monitor = RuntimeHealthMonitor(
+            scanner_status=_MutableStatusSource(_status(source="evdev")).status,
+            playback_status=_MutableStatusSource(_status(backend="spotify")).status,
+            setup_status=_MutableStatusSource(
+                _status(
+                    code="setup_required",
+                    ready=False,
+                    message="setup required",
+                    source="setup",
+                )
+            ).status,
+            poll_interval_seconds=5.0,
+            source="evdev",
+        )
+
+        event = monitor.poll_once()
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.code, "setup_required")
+
+    def test_auth_required_blocks_ready(self) -> None:
+        monitor = RuntimeHealthMonitor(
+            scanner_status=_MutableStatusSource(_status(source="evdev")).status,
+            playback_status=_MutableStatusSource(_status(backend="spotify")).status,
+            setup_status=_MutableStatusSource(
+                _status(
+                    code="auth_required",
+                    ready=False,
+                    message="auth required",
+                    source="setup",
+                )
+            ).status,
+            poll_interval_seconds=5.0,
+            source="evdev",
+        )
+
+        event = monitor.poll_once()
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.code, "auth_required")
+
 
 class _MutableStatusSource:
     def __init__(self, current: DependencyStatus) -> None:

@@ -13,7 +13,7 @@ from .core.controller import Controller
 from .core.deduper import DuplicateGate
 from .core.models import ControllerEvent, EventSink
 from .logging import StructuredEventLogger, configure_logging
-from .runtime import RuntimeDependencies, StartupError, build_runtime
+from .runtime import LifecycleService, RuntimeDependencies, StartupError, build_runtime
 
 LOGGER = logging.getLogger("jukebox.main")
 RuntimeFactory = Callable[[Settings, ReadableInput], RuntimeDependencies]
@@ -45,10 +45,9 @@ def main(
         environment=settings.environment,
         stream=error_stream,
     )
-
-    event_sinks: list[EventSink] = [TerminalStatusSink(output_stream), StructuredEventLogger()]
+    base_event_sinks: list[EventSink] = [TerminalStatusSink(output_stream), StructuredEventLogger()]
     _emit_event(
-        event_sinks,
+        base_event_sinks,
         ControllerEvent(code="booting", message="waiting for scanner and receiver"),
     )
 
@@ -58,7 +57,7 @@ def main(
         )
     except StartupError as exc:
         _emit_event(
-            event_sinks,
+            base_event_sinks,
             ControllerEvent(
                 code=exc.code,
                 message=exc.message,
@@ -73,14 +72,28 @@ def main(
         print(f"Startup error: {exc}", file=error_stream)
         return 1
 
+    event_sinks: list[EventSink] = [*base_event_sinks, *runtime.event_sinks]
     controller = Controller(
         playback_backend=runtime.playback_backend,
         duplicate_gate=DuplicateGate(window_seconds=settings.duplicate_window_seconds),
+        action_router=runtime.action_router,
+        operator_state=runtime.operator_state,
         event_sinks=event_sinks,
     )
     LOGGER.info("jukebox controller started", extra={"backend": settings.playback_backend})
+    started_services: list[LifecycleService] = []
 
     try:
+        for service in runtime.services:
+            try:
+                service.start()
+            except OSError as exc:
+                if settings.environment == "production":
+                    print(f"Startup error: {exc}", file=error_stream)
+                    return 1
+                LOGGER.warning("runtime service failed to start", extra={"error": str(exc)})
+                continue
+            started_services.append(service)
         runtime.health_monitor.start(event_sinks)
         for line in ScanLineReader(runtime.input_stream):
             controller.process_line(line)
@@ -89,6 +102,8 @@ def main(
         return 130
     finally:
         runtime.health_monitor.stop()
+        for service in reversed(started_services):
+            service.stop()
 
     return 0
 

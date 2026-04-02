@@ -1,0 +1,2 @@
+Cmnd_Alias JUKEBOX_MAINT = /usr/local/libexec/jukebox-wifi-helper *, /usr/local/libexec/jukebox-spotifyd-auth-helper *, /usr/local/libexec/jukebox-shutdown-helper *
+pi ALL=(root) NOPASSWD: JUKEBOX_MAINT
