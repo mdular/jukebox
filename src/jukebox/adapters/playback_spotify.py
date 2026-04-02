@@ -232,6 +232,30 @@ class SpotifyPlaybackBackend:
             operation="volume",
         )
 
+    def player_active(self) -> bool | None:
+        """Return whether the target device is actively playing."""
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            return None
+
+        target_device_or_error = self._resolve_target_device(access_token_or_error)
+        if isinstance(target_device_or_error, PlaybackResult):
+            return None
+
+        state_or_error = self._get_current_playback(access_token_or_error)
+        if isinstance(state_or_error, PlaybackResult):
+            return None
+        if state_or_error is None:
+            return False
+
+        device = state_or_error.get("device")
+        if not isinstance(device, dict):
+            return None
+        if device.get("id") != target_device_or_error.device_id:
+            return False
+        return bool(state_or_error.get("is_playing") is True)
+
     def _refresh_access_token(self) -> str | PlaybackResult:
         credentials = f"{self._client_id}:{self._client_secret}".encode("utf-8")
         encoded_credentials = base64.b64encode(credentials).decode("ascii")

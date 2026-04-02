@@ -39,6 +39,20 @@ class IdleMonitorTests(unittest.TestCase):
 
         self.assertIsNone(monitor.poll_once())
 
+    def test_poll_once_does_not_shutdown_while_setup_mode_is_active(self) -> None:
+        requested: list[str] = []
+        monitor = IdleMonitor(
+            idle_shutdown_seconds=5.0,
+            player_active=lambda: False,
+            shutdown_callback=lambda reason: requested.append(reason),
+            clock=_FakeClock([0.0, 0.0, 10.0]),
+        )
+
+        monitor.handle(ControllerEvent(code="setup_required", message="setup required"))
+
+        self.assertIsNone(monitor.poll_once())
+        self.assertEqual(requested, [])
+
 
 class _FakeClock:
     def __init__(self, values: list[float]) -> None:

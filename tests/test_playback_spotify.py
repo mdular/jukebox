@@ -424,6 +424,47 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
             "https://api.spotify.com/v1/me/player/volume?volume_percent=55&device_id=device-id",
         )
 
+    def test_player_active_reports_true_for_matching_playback(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {
+                        "devices": [{"id": "device-id", "name": "jukebox", "is_active": True}],
+                    },
+                ),
+                _FakeResponse(
+                    200,
+                    {
+                        "device": {"id": "device-id", "name": "jukebox"},
+                        "is_playing": True,
+                        "item": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
+                    },
+                ),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        self.assertTrue(backend.player_active())
+
+    def test_player_active_reports_false_when_no_playback_is_active(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {
+                        "devices": [{"id": "device-id", "name": "jukebox", "is_active": True}],
+                    },
+                ),
+                _FakeResponse(204, None),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        self.assertFalse(backend.player_active())
+
 
 def _backend(
     *,

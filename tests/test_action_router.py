@@ -92,6 +92,9 @@ class _PlaybackBackend:
     def set_volume_percent(self, percent: int) -> PlaybackResult:
         return PlaybackResult(ok=True, backend="stub", message=str(percent))
 
+    def player_active(self) -> bool | None:
+        return False
+
 
 class _SystemHelpers:
     def __init__(self) -> None:

@@ -34,6 +34,8 @@ ssh -p "$PI_PORT" "$SSH_TARGET" \
   cd '$PI_ROOT'
   '$PI_ROOT/.venv/bin/pip' install -e '.[pi]'
   sudo install -m 644 '$PI_ROOT/systemd/jukebox.service' /etc/systemd/system/jukebox.service
+  sudo mkdir -p /var/lib/jukebox
+  sudo chown '$PI_USER':'$PI_USER' /var/lib/jukebox
   if [ ! -f /etc/jukebox/jukebox.env ]; then
     echo '/etc/jukebox/jukebox.env is missing. Run scripts/pi-bootstrap.sh first.' >&2
     exit 1

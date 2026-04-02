@@ -247,6 +247,9 @@ class _StubBackend:
 
         return PlaybackResult(ok=True, backend="stub", message=f"volume {percent}")
 
+    def player_active(self) -> bool | None:
+        return False
+
 
 class _FakeHealthMonitor:
     def __init__(self, events: list[ControllerEvent]) -> None:

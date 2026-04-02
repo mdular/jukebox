@@ -52,3 +52,19 @@ class StubPlaybackBackendTests(unittest.TestCase):
         self.assertTrue(stop_result.ok)
         self.assertTrue(next_result.ok)
         self.assertTrue(volume_result.ok)
+
+    def test_stub_backend_reports_player_activity(self) -> None:
+        backend = StubPlaybackBackend()
+        request = PlaybackRequest(
+            uri=SpotifyUri(
+                raw="spotify:track:6rqhFgbbKwnb9MLmUQDhG6",
+                kind="track",
+                spotify_id="6rqhFgbbKwnb9MLmUQDhG6",
+            )
+        )
+
+        self.assertFalse(backend.player_active())
+        backend.dispatch(request)
+        self.assertTrue(backend.player_active())
+        backend.stop()
+        self.assertFalse(backend.player_active())

@@ -10,7 +10,7 @@ from .adapters.feedback import TerminalStatusSink
 from .adapters.input import ReadableInput, ScanLineReader
 from .config import ConfigError, Settings, from_env
 from .core.controller import Controller
-from .core.deduper import DuplicateGate
+from .core.deduper import ActionDebounceGate, DuplicateGate
 from .core.models import ControllerEvent, EventSink
 from .logging import StructuredEventLogger, configure_logging
 from .runtime import LifecycleService, RuntimeDependencies, StartupError, build_runtime
@@ -76,6 +76,9 @@ def main(
     controller = Controller(
         playback_backend=runtime.playback_backend,
         duplicate_gate=DuplicateGate(window_seconds=settings.duplicate_window_seconds),
+        action_debounce_gate=ActionDebounceGate(
+            window_seconds=settings.control_debounce_seconds
+        ),
         action_router=runtime.action_router,
         operator_state=runtime.operator_state,
         event_sinks=event_sinks,
@@ -85,6 +88,8 @@ def main(
 
     try:
         for service in runtime.services:
+            if hasattr(service, "bind_event_sinks"):
+                service.bind_event_sinks(event_sinks)
             try:
                 service.start()
             except OSError as exc:

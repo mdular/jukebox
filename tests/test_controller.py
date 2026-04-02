@@ -6,7 +6,7 @@ from pathlib import Path
 
 from jukebox.adapters.action_router import ActionRouter
 from jukebox.core.controller import Controller
-from jukebox.core.deduper import DuplicateGate
+from jukebox.core.deduper import ActionDebounceGate, DuplicateGate
 from jukebox.core.models import ControllerEvent, PlaybackRequest, PlaybackResult
 from jukebox.operator_state import OperatorStateStore
 
@@ -173,6 +173,43 @@ class ControllerTests(unittest.TestCase):
             )
             self.assertEqual(backend.requests, [])
 
+    def test_action_card_is_debounced_within_control_window(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            helpers = _SystemHelpers()
+            backend = _RecordingBackend([])
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([])),
+                action_debounce_gate=ActionDebounceGate(
+                    window_seconds=1.0,
+                    clock=_FakeClock([10.0, 10.2, 10.4]),
+                ),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=OperatorStateStore(Path(temp_dir) / "state.json"),
+                    system_helpers=helpers,
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=OperatorStateStore(Path(temp_dir) / "state.json"),
+                event_sinks=[sink],
+            )
+
+            controller.process_line("jukebox:setup:wifi-reset\n")
+            controller.process_line("jukebox:setup:wifi-reset\n")
+
+            self.assertEqual(helpers.reset_wifi_calls, 1)
+            self.assertEqual(
+                [event.code for event in sink.events],
+                [
+                    "scan_received",
+                    "action_card_accepted",
+                    "action_succeeded",
+                    "scan_received",
+                    "duplicate_suppressed",
+                ],
+            )
+
     def test_track_scan_uses_queue_backend_when_playback_mode_is_queue_tracks(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             sink = _RecordingSink()
@@ -255,6 +292,9 @@ class _RecordingBackend:
     def set_volume_percent(self, percent: int) -> PlaybackResult:
         return PlaybackResult(ok=True, backend="stub", message=str(percent))
 
+    def player_active(self) -> bool | None:
+        return False
+
 
 class _RecordingSink:
     def __init__(self) -> None:
@@ -273,7 +313,11 @@ class _FakeClock:
 
 
 class _SystemHelpers:
+    def __init__(self) -> None:
+        self.reset_wifi_calls = 0
+
     def reset_wifi(self) -> tuple[bool, str]:
+        self.reset_wifi_calls += 1
         return True, "wifi reset"
 
     def request_shutdown(self, *, reason: str) -> tuple[bool, str]:

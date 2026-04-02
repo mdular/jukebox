@@ -7,7 +7,7 @@ from typing import Iterable
 from ..adapters.action_router import ActionRouter
 from ..operator_state import OperatorStateStore
 from .cards import JukeboxActionCard, PlaybackMode
-from .deduper import DuplicateGate
+from .deduper import ActionDebounceGate, DuplicateGate
 from .models import ControllerEvent, EventSink, PlaybackBackend, PlaybackRequest
 from .parser import InvalidPayloadError, UnsupportedContentError, parse_scan_payload
 
@@ -20,12 +20,14 @@ class Controller:
         *,
         playback_backend: PlaybackBackend,
         duplicate_gate: DuplicateGate,
+        action_debounce_gate: ActionDebounceGate | None = None,
         action_router: ActionRouter | None = None,
         operator_state: OperatorStateStore | None = None,
         event_sinks: Iterable[EventSink] = (),
     ) -> None:
         self._playback_backend = playback_backend
         self._duplicate_gate = duplicate_gate
+        self._action_debounce_gate = action_debounce_gate
         self._action_router = action_router
         self._operator_state = operator_state
         self._event_sinks = list(event_sinks)
@@ -73,6 +75,22 @@ class Controller:
             return
 
         if isinstance(card, JukeboxActionCard):
+            if (
+                self._action_debounce_gate is not None
+                and self._action_debounce_gate.is_duplicate(card.action_id)
+            ):
+                self._emit(
+                    ControllerEvent(
+                        code="duplicate_suppressed",
+                        message=(
+                            f"ignored within {self._action_debounce_gate.window_seconds:.1f}s"
+                        ),
+                        payload=payload,
+                        card_kind="action",
+                        action_name=card.action_id,
+                    )
+                )
+                return
             if self._action_router is None:
                 self._emit(
                     ControllerEvent(
@@ -107,6 +125,8 @@ class Controller:
                 setup_mode=action_result.setup_mode,
             )
             self._emit(event)
+            if self._action_debounce_gate is not None:
+                self._action_debounce_gate.record_success(card.action_id)
             if action_result.ok and action_result.playback_mode is not None:
                 self._emit(
                     ControllerEvent(

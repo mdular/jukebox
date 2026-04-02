@@ -24,6 +24,8 @@ print_status_json() {
   echo "==> operator status JSON"
 ssh -p "$PI_PORT" "$SSH_TARGET" /bin/sh <<EOF
 set -eu
+sudo /bin/sh <<'SH'
+set -eu
 set -a
 . /etc/jukebox/jukebox.env
 set +a
@@ -38,6 +40,7 @@ with urlopen(url, timeout=5) as response:
     payload = json.loads(response.read().decode("utf-8"))
 print(json.dumps(payload, indent=2, sort_keys=True))
 PY
+SH
 EOF
 }
 
@@ -52,7 +55,7 @@ set -eu
 set -a
 . /etc/jukebox/jukebox.env
 set +a
-printf '%s\n' '$payload' | JUKEBOX_INPUT_BACKEND=stdin '$PI_ROOT/.venv/bin/python' -m jukebox
+printf '%s\n' '$payload' | JUKEBOX_INPUT_BACKEND=stdin JUKEBOX_OPERATOR_HTTP_PORT=18080 '$PI_ROOT/.venv/bin/python' -m jukebox
 SH
 EOF
 )

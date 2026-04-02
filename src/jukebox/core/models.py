@@ -82,6 +82,9 @@ class PlaybackBackend(Protocol):
     def set_volume_percent(self, percent: int) -> PlaybackResult:
         """Apply a software volume percentage."""
 
+    def player_active(self) -> bool | None:
+        """Return whether playback is currently active on the target device."""
+
 
 class EventSink(Protocol):
     """Observer contract for controller events."""
