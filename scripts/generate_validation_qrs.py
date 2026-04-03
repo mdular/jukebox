@@ -33,7 +33,7 @@ PAYLOADS = (
 
 
 def main() -> None:
-    output_dir = Path("spec/qr codes/control")
+    output_dir = Path("docs/qr codes/control")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for stem, payload in PAYLOADS:

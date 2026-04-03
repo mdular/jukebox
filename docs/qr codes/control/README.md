@@ -1,6 +1,7 @@
 # Control QR Codes
 
 These SVG QR codes are generated from the exact payloads used in the EPIC-4 control-card validation flow.
+Printable PNG card outputs and rasterization notes live in [docs/control cards/README.md](/Users/markus/Workspace/jukebox/docs/control%20cards/README.md).
 
 Files in this directory:
 

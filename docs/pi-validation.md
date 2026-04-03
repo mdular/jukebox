@@ -5,7 +5,7 @@ It extends the EPIC 3 reboot, recovery, and scan-to-playback baseline with the n
 
 Use [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) to record the exact Pi, image, and validation outcome for each run.
 
-## Validation QR Payloads
+## Control Asset Payloads
 
 The exact validation QR payloads are:
 
@@ -23,7 +23,8 @@ The exact validation QR payloads are:
 - Receiver re-auth: `jukebox:setup:receiver-reauth`
 - Shutdown: `jukebox:system:shutdown`
 
-Generated QR images for those payloads live under [spec/qr codes/control](/Users/markus/Workspace/jukebox/spec/qr%20codes/control), and printable command cards live under [spec/control cards](/Users/markus/Workspace/jukebox/spec/control%20cards).
+Generated QR images for those payloads live under [docs/qr codes/control](/Users/markus/Workspace/jukebox/docs/qr%20codes/control), and printable command cards live under [docs/control cards](/Users/markus/Workspace/jukebox/docs/control%20cards).
+Use those `docs/` paths as the current asset source of truth during validation.
 
 ## Remote Smoke Validation
 

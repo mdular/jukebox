@@ -23,6 +23,7 @@ class ValidationCardLayoutTests(unittest.TestCase):
         svg = validation_cards.render_card_svg(
             label="Stop",
             payload="jukebox:playback:stop",
+            symbol="control-playback-stop",
         )
 
         root = ET.fromstring(svg)
@@ -41,12 +42,23 @@ class ValidationCardLayoutTests(unittest.TestCase):
         self.assertAlmostEqual(float(qr_rect.attrib["width"]), expected_qr_size)
         self.assertAlmostEqual(float(qr_rect.attrib["height"]), expected_qr_size)
 
-        text = root.find("./svg:text", SVG_NS)
-        self.assertIsNotNone(text)
-        assert text is not None
-        self.assertAlmostEqual(float(text.attrib["x"]), right_x + (right_width / 2))
+        symbol = root.find("./svg:g[@id='card-symbol']", SVG_NS)
+        self.assertIsNotNone(symbol)
+        assert symbol is not None
+        expected_center_x = right_x + (right_width / 2)
+        expected_center_y = validation_cards.PADDING + (qr_area_size / 2)
+        expected_scale = (min(right_width, qr_area_size) * 0.62) / validation_cards.SYMBOL_VIEWBOX_SIZE
 
-        module_rects = root.findall("./svg:g/svg:rect", SVG_NS)
+        self.assertEqual(symbol.attrib["data-symbol"], "control-playback-stop")
+        self.assertEqual(
+            symbol.attrib["transform"],
+            f"translate({expected_center_x:.1f} {expected_center_y:.1f}) scale({expected_scale:.3f})",
+        )
+        self.assertEqual(root.find("./svg:title", SVG_NS).text, "Stop")
+        self.assertIsNone(root.find("./svg:text", SVG_NS))
+        self.assertGreater(len(list(symbol)), 0)
+
+        module_rects = root.findall("./svg:g[@id='qr-modules']/svg:rect", SVG_NS)
         self.assertGreater(len(module_rects), 0)
         for rect in module_rects:
             rect_x = float(rect.attrib["x"])
