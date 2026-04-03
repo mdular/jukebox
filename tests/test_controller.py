@@ -213,7 +213,10 @@ class ControllerTests(unittest.TestCase):
     def test_track_scan_uses_queue_backend_when_playback_mode_is_queue_tracks(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             sink = _RecordingSink()
-            backend = _RecordingBackend([PlaybackResult(ok=True, backend="stub", message="queued")])
+            backend = _RecordingBackend(
+                [PlaybackResult(ok=True, backend="stub", message="queued")],
+                player_active=True,
+            )
             store = OperatorStateStore(Path(temp_dir) / "state.json")
             store.set_playback_mode("queue_tracks")
             controller = Controller(
@@ -233,6 +236,37 @@ class ControllerTests(unittest.TestCase):
 
             self.assertEqual(backend.enqueued[0].uri.kind, "track")
             self.assertEqual(sink.events[-1].code, "playback_enqueued")
+
+    def test_queue_mode_dispatches_track_when_player_is_idle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            backend = _RecordingBackend(
+                [PlaybackResult(ok=True, backend="stub", message="played")],
+                player_active=False,
+            )
+            store = OperatorStateStore(Path(temp_dir) / "state.json")
+            store.set_playback_mode("queue_tracks")
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([10.0])),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=store,
+                    system_helpers=_SystemHelpers(),
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=store,
+                event_sinks=[sink],
+            )
+
+            controller.process_line("spotify:track:6rqhFgbbKwnb9MLmUQDhG6\n")
+
+            self.assertEqual(len(backend.enqueued), 0)
+            self.assertEqual(backend.requests[0].uri.kind, "track")
+            self.assertEqual(
+                [event.code for event in sink.events[-3:]],
+                ["scan_accepted", "playback_mode_fallback", "playback_dispatch_succeeded"],
+            )
 
     def test_queue_mode_falls_back_to_replace_for_album_cards(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -263,8 +297,14 @@ class ControllerTests(unittest.TestCase):
 
 
 class _RecordingBackend:
-    def __init__(self, results: list[PlaybackResult]) -> None:
+    def __init__(
+        self,
+        results: list[PlaybackResult],
+        *,
+        player_active: bool | None = False,
+    ) -> None:
         self._results = results
+        self._player_active = player_active
         self.requests: list[PlaybackRequest] = []
         self.enqueued: list[PlaybackRequest] = []
 
@@ -273,6 +313,7 @@ class _RecordingBackend:
 
     def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
         self.requests.append(request)
+        self._player_active = True
         if self._results:
             return self._results.pop(0)
         return PlaybackResult(ok=True, backend="stub", message="played")
@@ -293,7 +334,7 @@ class _RecordingBackend:
         return PlaybackResult(ok=True, backend="stub", message=str(percent))
 
     def player_active(self) -> bool | None:
-        return False
+        return self._player_active
 
 
 class _RecordingSink:

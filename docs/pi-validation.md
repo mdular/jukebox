@@ -5,6 +5,26 @@ It extends the EPIC 3 reboot, recovery, and scan-to-playback baseline with the n
 
 Use [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) to record the exact Pi, image, and validation outcome for each run.
 
+## Validation QR Payloads
+
+The exact validation QR payloads are:
+
+- Smoke track: `spotify:track:6rqhFgbbKwnb9MLmUQDhG6`
+- Queue-fallback album: `spotify:album:1ATL5GLyefJaxhQzSPVrLX`
+- Queue-fallback playlist: `spotify:playlist:37i9dQZF1DXcBWIGoYBM5M`
+- Stop: `jukebox:playback:stop`
+- Next: `jukebox:playback:next`
+- Mode replace: `jukebox:mode:replace`
+- Mode queue: `jukebox:mode:queue`
+- Volume low: `jukebox:volume:low`
+- Volume medium: `jukebox:volume:medium`
+- Volume high: `jukebox:volume:high`
+- Wi-Fi reset: `jukebox:setup:wifi-reset`
+- Receiver re-auth: `jukebox:setup:receiver-reauth`
+- Shutdown: `jukebox:system:shutdown`
+
+Generated QR images for those payloads live under [spec/qr codes/control](/Users/markus/Workspace/jukebox/spec/qr%20codes/control), and printable command cards live under [spec/control cards](/Users/markus/Workspace/jukebox/spec/control%20cards).
+
 ## Remote Smoke Validation
 
 Use the smoke helper for repeatable remote checks:
@@ -65,7 +85,7 @@ Run these checks on the physical prototype with real cards:
 3. Confirm `jukebox:playback:stop` pauses active playback.
 4. Confirm `jukebox:playback:next` advances to the next track during active playback.
 5. Confirm `jukebox:mode:queue` changes `runtime.playback_mode` to `queue_tracks`.
-6. In queue mode, confirm a real track card queues instead of replacing playback.
+6. In queue mode, confirm a real track card queues during active playback, and starts playback in case the player is idle.
 7. In queue mode, confirm an album or playlist card still replaces playback and emits the explicit fallback event.
 8. Confirm each selected volume preset card applies the configured software volume percentage without changing the external-speaker baseline.
 9. Confirm `jukebox:system:shutdown` triggers a graceful shutdown path rather than an abrupt power cut.

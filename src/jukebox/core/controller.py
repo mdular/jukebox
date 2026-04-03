@@ -169,9 +169,25 @@ class Controller:
             playback_mode = self._operator_state.load().playback_mode
 
         if playback_mode == "queue_tracks" and uri.kind == "track":
-            playback_result = self._playback_backend.enqueue(PlaybackRequest(uri=uri))
-            success_code = "playback_enqueued"
-            success_message = f"queued {uri.kind}"
+            player_active = self._playback_backend.player_active()
+            if player_active is False:
+                self._emit(
+                    ControllerEvent(
+                        code="playback_mode_fallback",
+                        message="queue mode starts playback when the player is idle",
+                        payload=payload,
+                        card_kind="media",
+                        uri_kind=uri.kind,
+                        playback_mode=playback_mode,
+                    )
+                )
+                playback_result = self._playback_backend.dispatch(PlaybackRequest(uri=uri))
+                success_code = "playback_dispatch_succeeded"
+                success_message = f"dispatched {uri.kind}"
+            else:
+                playback_result = self._playback_backend.enqueue(PlaybackRequest(uri=uri))
+                success_code = "playback_enqueued"
+                success_message = f"queued {uri.kind}"
         else:
             if playback_mode == "queue_tracks" and uri.kind in {"album", "playlist"}:
                 self._emit(

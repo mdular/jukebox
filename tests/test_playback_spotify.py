@@ -339,6 +339,53 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.reason_code, "spotify_start_not_confirmed")
 
+    def test_dispatch_accepts_playing_target_device_when_spotify_metadata_is_stale(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+                _FakeResponse(204, None),
+                _FakeResponse(
+                    200,
+                    {
+                        "device": {"id": "device-id", "name": "jukebox"},
+                        "is_playing": True,
+                        "item": {"uri": "spotify:track:previous-track"},
+                    },
+                ),
+                _FakeResponse(
+                    200,
+                    {
+                        "device": {"id": "device-id", "name": "jukebox"},
+                        "is_playing": True,
+                        "item": {"uri": "spotify:track:previous-track"},
+                    },
+                ),
+            ]
+        )
+        backend = _backend(
+            requester=requester,
+            confirmation_timeout_seconds=0.5,
+            confirmation_poll_interval_seconds=0.25,
+            clock=_FakeClock([0.0, 0.0, 0.25, 0.5]),
+        )
+
+        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.device_name, "jukebox")
+        self.assertEqual(
+            result.message,
+            (
+                "Playback started, but Spotify did not report the requested item "
+                "before confirmation timed out."
+            ),
+        )
+
     def test_enqueue_calls_queue_endpoint(self) -> None:
         requester = _SequenceRequester(
             [

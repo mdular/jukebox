@@ -481,24 +481,37 @@ class SpotifyPlaybackBackend:
         request: PlaybackRequest,
     ) -> PlaybackResult:
         deadline = self._clock() + self._confirmation_timeout_seconds
+        target_device_started_playing = False
         while True:
             state_or_error = self._get_current_playback(access_token)
             if isinstance(state_or_error, PlaybackResult):
                 return state_or_error
-            if state_or_error is not None and self._matches_requested_playback(
-                state_or_error, target_device, request
-            ):
-                return PlaybackResult(
-                    ok=True,
-                    backend="spotify",
-                    message="Playback started.",
-                    device_name=target_device.name,
-                )
+            if state_or_error is not None:
+                if self._matches_requested_playback(state_or_error, target_device, request):
+                    return PlaybackResult(
+                        ok=True,
+                        backend="spotify",
+                        message="Playback started.",
+                        device_name=target_device.name,
+                    )
+                if self._is_target_device_playing(state_or_error, target_device):
+                    target_device_started_playing = True
 
             now = self._clock()
             if now + self._confirmation_poll_interval_seconds >= deadline:
                 break
             self._sleeper(self._confirmation_poll_interval_seconds)
+
+        if target_device_started_playing:
+            return PlaybackResult(
+                ok=True,
+                backend="spotify",
+                message=(
+                    "Playback started, but Spotify did not report the requested item before "
+                    "confirmation timed out."
+                ),
+                device_name=target_device.name,
+            )
 
         return PlaybackResult(
             ok=False,
@@ -604,12 +617,7 @@ class SpotifyPlaybackBackend:
         target_device: _TargetDevice,
         request: PlaybackRequest,
     ) -> bool:
-        device = payload.get("device")
-        if not isinstance(device, dict):
-            return False
-        if device.get("id") != target_device.device_id:
-            return False
-        if payload.get("is_playing") is not True:
+        if not self._is_target_device_playing(payload, target_device):
             return False
 
         if request.uri.kind == "track":
@@ -618,6 +626,18 @@ class SpotifyPlaybackBackend:
 
         context = payload.get("context")
         return isinstance(context, dict) and context.get("uri") == request.uri.raw
+
+    def _is_target_device_playing(
+        self,
+        payload: dict[str, object],
+        target_device: _TargetDevice,
+    ) -> bool:
+        device = payload.get("device")
+        if not isinstance(device, dict):
+            return False
+        if device.get("id") != target_device.device_id:
+            return False
+        return payload.get("is_playing") is True
 
     def _map_http_error(self, exc: HTTPError, *, operation: str) -> PlaybackResult:
         if exc.code in {401, 403}:
