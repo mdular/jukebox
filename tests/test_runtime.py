@@ -48,6 +48,9 @@ class BuildRuntimeTests(unittest.TestCase):
             self.assertIn("setup", runtime_payload)
             self.assertIn("config", runtime_payload)
             self.assertIn("idle", runtime_payload)
+            config_payload = runtime_payload["config"]
+            assert isinstance(config_payload, dict)
+            self.assertIn("wifi_rollback_timeout_seconds", config_payload)
 
 
 class _FakeSystemHelpers:

@@ -208,6 +208,7 @@ def _build_runtime_status(
             "idle_shutdown_seconds": settings.idle_shutdown_seconds,
             "setup_ap_ssid": settings.setup_ap_ssid,
             "setup_fallback_grace_seconds": settings.setup_fallback_grace_seconds,
+            "wifi_rollback_timeout_seconds": settings.wifi_rollback_timeout_seconds,
             "volume_presets": {
                 "low": settings.volume_preset_low_percent,
                 "medium": settings.volume_preset_medium_percent,

@@ -36,6 +36,7 @@ class FromEnvTests(unittest.TestCase):
         self.assertIsNone(settings.setup_ap_ssid)
         self.assertIsNone(settings.setup_ap_passphrase)
         self.assertEqual(settings.setup_fallback_grace_seconds, 120.0)
+        self.assertEqual(settings.wifi_rollback_timeout_seconds, 120.0)
         self.assertEqual(settings.wifi_helper_command, "/usr/local/libexec/jukebox-wifi-helper")
         self.assertEqual(
             settings.spotifyd_auth_helper_command,
@@ -84,6 +85,7 @@ class FromEnvTests(unittest.TestCase):
                 "JUKEBOX_SETUP_AP_SSID": "jukebox-setup",
                 "JUKEBOX_SETUP_AP_PASSPHRASE": "secret-pass",
                 "JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS": "180",
+                "JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS": "240",
                 "JUKEBOX_WIFI_HELPER_COMMAND": "/opt/bin/wifi-helper",
                 "JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND": "/opt/bin/auth-helper",
                 "JUKEBOX_SHUTDOWN_HELPER_COMMAND": "/opt/bin/shutdown-helper",
@@ -114,6 +116,7 @@ class FromEnvTests(unittest.TestCase):
         self.assertEqual(settings.setup_ap_ssid, "jukebox-setup")
         self.assertEqual(settings.setup_ap_passphrase, "secret-pass")
         self.assertEqual(settings.setup_fallback_grace_seconds, 180.0)
+        self.assertEqual(settings.wifi_rollback_timeout_seconds, 240.0)
         self.assertEqual(settings.wifi_helper_command, "/opt/bin/wifi-helper")
         self.assertEqual(settings.spotifyd_auth_helper_command, "/opt/bin/auth-helper")
         self.assertEqual(settings.shutdown_helper_command, "/opt/bin/shutdown-helper")
@@ -197,3 +200,7 @@ class FromEnvTests(unittest.TestCase):
     def test_setup_ap_passphrase_must_be_long_enough(self) -> None:
         with self.assertRaises(ConfigError):
             from_env({"JUKEBOX_SETUP_AP_PASSPHRASE": "short"})
+
+    def test_wifi_rollback_timeout_seconds_must_be_positive(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS": "0"})

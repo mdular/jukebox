@@ -47,14 +47,23 @@ class ValidationCardLayoutTests(unittest.TestCase):
         assert symbol is not None
         expected_center_x = right_x + (right_width / 2)
         expected_center_y = validation_cards.PADDING + (qr_area_size / 2)
-        expected_scale = (min(right_width, qr_area_size) * 0.62) / validation_cards.SYMBOL_VIEWBOX_SIZE
+        expected_scale = (
+            min(right_width, qr_area_size) * 0.62
+        ) / validation_cards.SYMBOL_VIEWBOX_SIZE
 
         self.assertEqual(symbol.attrib["data-symbol"], "control-playback-stop")
+        expected_transform = (
+            f"translate({expected_center_x:.1f} {expected_center_y:.1f}) "
+            f"scale({expected_scale:.3f})"
+        )
         self.assertEqual(
             symbol.attrib["transform"],
-            f"translate({expected_center_x:.1f} {expected_center_y:.1f}) scale({expected_scale:.3f})",
+            expected_transform,
         )
-        self.assertEqual(root.find("./svg:title", SVG_NS).text, "Stop")
+        title = root.find("./svg:title", SVG_NS)
+        self.assertIsNotNone(title)
+        assert title is not None
+        self.assertEqual(title.text, "Stop")
         self.assertIsNone(root.find("./svg:text", SVG_NS))
         self.assertGreater(len(list(symbol)), 0)
 

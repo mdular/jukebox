@@ -474,6 +474,49 @@ class SpotifyPlaybackBackend:
             device_name=target_device.name,
         )
 
+    def _play_payload(self, access_token: str, request: PlaybackRequest) -> dict[str, object]:
+        if request.uri.kind != "track":
+            return {"context_uri": request.uri.raw}
+
+        album_uri = self._track_album_uri(access_token, request)
+        if album_uri is None:
+            return {"uris": [request.uri.raw]}
+
+        return {
+            "context_uri": album_uri,
+            "offset": {"uri": request.uri.raw},
+        }
+
+    def _track_album_uri(self, access_token: str, request: PlaybackRequest) -> str | None:
+        track_request = Request(
+            f"https://api.spotify.com/v1/tracks/{request.uri.spotify_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            method="GET",
+        )
+
+        try:
+            response = self._requester(track_request, self._timeout_seconds)
+        except (HTTPError, URLError):
+            return None
+
+        if response.status != 200:
+            return None
+
+        try:
+            payload = json.loads(response.read().decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        album = payload.get("album")
+        if not isinstance(album, dict):
+            return None
+        album_uri = album.get("uri")
+        if not isinstance(album_uri, str) or album_uri == "":
+            return None
+        return album_uri
+
     def _confirm_playback(
         self,
         access_token: str,

@@ -14,6 +14,8 @@ from jukebox.adapters.playback_spotify import ResponseLike, SpotifyPlaybackBacke
 from jukebox.core.cards import SpotifyUriKind
 from jukebox.core.models import PlaybackRequest, SpotifyUri
 
+_TRACK_ALBUM_URI = "spotify:album:1ATL5GLyefJaxhQzSPVrLX"
+
 
 class SpotifyPlaybackBackendTests(unittest.TestCase):
     def test_status_is_ready_when_auth_and_target_are_available(self) -> None:
@@ -86,6 +88,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -103,9 +106,14 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.device_name, "jukebox")
-        token_request, devices_request, transfer_request, play_request, state_request = (
-            requester.requests
-        )
+        (
+            token_request,
+            devices_request,
+            transfer_request,
+            track_request,
+            play_request,
+            state_request,
+        ) = requester.requests
         expected_basic = base64.b64encode(b"client-id:client-secret").decode("ascii")
         self.assertEqual(token_request.get_header("Authorization"), f"Basic {expected_basic}")
         self.assertEqual(devices_request.full_url, "https://api.spotify.com/v1/me/player/devices")
@@ -115,12 +123,19 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
             {"device_ids": ["device-id"], "play": False},
         )
         self.assertEqual(
+            track_request.full_url,
+            "https://api.spotify.com/v1/tracks/6rqhFgbbKwnb9MLmUQDhG6",
+        )
+        self.assertEqual(
             play_request.full_url,
             "https://api.spotify.com/v1/me/player/play?device_id=device-id",
         )
         self.assertEqual(
             json.loads(cast(bytes, play_request.data).decode("utf-8")),
-            {"uris": ["spotify:track:6rqhFgbbKwnb9MLmUQDhG6"]},
+            {
+                "context_uri": _TRACK_ALBUM_URI,
+                "offset": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
+            },
         )
         self.assertEqual(state_request.full_url, "https://api.spotify.com/v1/me/player")
 
@@ -164,6 +179,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-a", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -179,6 +195,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-b", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -220,6 +237,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -257,6 +275,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -316,6 +335,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -348,6 +368,7 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
                 _FakeResponse(204, None),
+                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -384,6 +405,38 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
                 "Playback started, but Spotify did not report the requested item "
                 "before confirmation timed out."
             ),
+        )
+
+    def test_track_dispatch_falls_back_to_single_uri_when_album_lookup_fails(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+                _http_error("https://api.spotify.com/v1/tracks/6rqhFgbbKwnb9MLmUQDhG6", 500),
+                _FakeResponse(204, None),
+                _FakeResponse(
+                    200,
+                    {
+                        "device": {"id": "device-id", "name": "jukebox"},
+                        "is_playing": True,
+                        "item": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
+                    },
+                ),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+
+        self.assertTrue(result.ok)
+        play_request = requester.requests[4]
+        self.assertEqual(
+            json.loads(cast(bytes, play_request.data).decode("utf-8")),
+            {"uris": ["spotify:track:6rqhFgbbKwnb9MLmUQDhG6"]},
         )
 
     def test_enqueue_calls_queue_endpoint(self) -> None:

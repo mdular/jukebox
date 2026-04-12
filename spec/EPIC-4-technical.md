@@ -31,7 +31,7 @@ This technical design assumes the checked decisions and notes in [spec/EPIC-4-re
 This design makes four explicit implementation assumptions so the expanded scope stays concrete:
 
 - The additional setup card selected under D-10 will be implemented as a receiver re-auth entry card, because receiver auth and re-auth are already selected EPIC 4 maintenance flows.
-- Replace-versus-queue mode is implemented as `replace` versus `queue_tracks`. Track cards can be queued; album and playlist cards keep replace semantics and surface that limitation honestly.
+- Replace-versus-queue mode is implemented as `replace` versus `queue_tracks`. Track cards queue while playback is already active, but still start playback if the target player is idle. Album and playlist cards keep replace semantics and surface that limitation honestly.
 - Volume preset cards are implemented through Spotify Connect software volume percentages. They complement but do not replace the external speaker's own volume controls.
 - Automatic Wi-Fi fallback is a setup-access behavior for missing Wi-Fi configuration, explicit Wi-Fi reset, or sustained boot-time inability to reach a configured network. Ordinary transient runtime outages remain degraded-state recovery, not immediate AP fallback.
 
@@ -42,6 +42,7 @@ This design makes four explicit implementation assumptions so the expanded scope
 - Reuse the current event-driven runtime so terminal output, structured logs, the new operator interface, and the idle monitor share one canonical status model.
 - Preserve the V1 external-speaker baseline while adding queue toggles, volume presets, and next-track in a way that stays honest about Spotify API limits.
 - Isolate privileged Wi-Fi, shutdown, and receiver-auth work behind narrow helper boundaries rather than expanding the main Python process privileges.
+- Make explicit Wi-Fi reset and Wi-Fi replacement safe to test remotely by using helper-owned rollback instead of one-way client-network mutations.
 - Keep the operator interface lightweight enough for Raspberry Pi 3 by using the Python standard library instead of a heavy web framework.
 - Add automatic Wi-Fi fallback and idle auto-shutdown in a way that improves standalone serviceability instead of creating more recovery ambiguity.
 - Leave a clear post-standalone review checkpoint for further UX experimentation without under-delivering the selected EPIC 4 scope.
@@ -126,11 +127,25 @@ Pretending full queue support for album and playlist cards would create misleadi
 Resolution:
 
 - persist a playback mode of either `replace` or `queue_tracks`
-- in `queue_tracks` mode, track cards call the queue path
+- in `queue_tracks` mode, track cards call the queue path only while playback is already active on the target device
+- if the target device is idle, a track card still starts playback immediately and emits an explicit informational event
 - album and playlist cards still use the ordinary replace dispatch path
 - feedback and docs must make that limitation explicit
 
 This preserves honesty without discarding the selected queue-toggle scope.
+
+### Spotify Connect Confirmation vs Honest Playback Feedback
+
+The Spotify player API can report stale item or queue metadata even after audible playback has already moved on to the requested target device.
+Treating those stale metadata snapshots as a hard failure produces misleading logs, duplicate-gate mistakes, and a worse child-facing experience than the real device behavior.
+
+Resolution:
+
+- keep exact item or context matching as the strongest confirmation when Spotify reports it in time
+- if the target device is clearly playing before the confirmation window ends, treat that as a successful start even when item or queue metadata is still stale
+- keep outright confirmation failure only for cases where playback never becomes active on the target device
+
+This keeps the feedback contract honest to the physical appliance behavior while acknowledging Spotify Connect propagation lag.
 
 ### Automatic Wi-Fi Fallback vs Ordinary Network Recovery
 
@@ -142,6 +157,22 @@ Resolution:
 - keep ordinary transient network loss as degraded-state recovery
 - enter setup fallback automatically only when there is no usable Wi-Fi configuration, Wi-Fi reset was explicitly requested, or boot-time connectivity does not recover within a long setup fallback grace period
 - keep the exact OS-network implementation inside a helper boundary so the Python app owns policy, not `/etc` file writing
+
+### Remote-Safe Wi-Fi Reset vs Remote Lockout
+
+EPIC 4 now includes operator-facing Wi-Fi reset and browser-based Wi-Fi replacement.
+If either path mutates the only working client configuration without a fallback-safe rollback, remote validation can strand the device and force physical recovery.
+
+Resolution:
+
+- whenever Wi-Fi reset or replacement starts from a known-working client configuration, the helper snapshots that configuration before changing anything
+- the helper arms a root-owned rollback timer before switching networking state
+- the rollback timer must survive loss of the Python process, the current SSH session, and ordinary client connectivity during the transition
+- only explicit success confirmation from the new setup path cancels the rollback and commits the new configuration
+- if the timeout expires first, the helper restores the prior working client configuration automatically
+- if the device reboots while a Wi-Fi trial is still pending, the helper resolves that pending state conservatively by restoring the prior working configuration unless the new configuration was already committed
+
+This makes remote Wi-Fi-reset validation safe when the device begins from a known-good client network, while leaving first-time no-Wi-Fi bring-up as a separate setup-path problem.
 
 ### In-Scope Experiments vs Post-Standalone Review
 
@@ -166,7 +197,8 @@ Scanned payload
             -> duplicate gate
             -> PlaybackModeResolver
                  -> replace -> PlaybackBackend.dispatch()
-                 -> queue_tracks + track -> PlaybackBackend.enqueue()
+                 -> queue_tracks + active track -> PlaybackBackend.enqueue()
+                 -> queue_tracks + idle track -> fallback replace dispatch
                  -> queue_tracks + album/playlist -> fallback replace dispatch
        -> if action:
             -> ActionDebounceGate
@@ -253,11 +285,13 @@ EPIC 4 adds a typed action-card path, a shared feedback-state layer, an operator
    - an action card under the new `jukebox:<group>:<action>` namespace
 3. For Spotify media cards, duplicate suppression behaves the same as EPIC 3.
 4. The controller resolves the current playback mode from operator state:
-   - `replace` dispatches exactly like EPIC 3
-   - `queue_tracks` enqueues `track` cards
+   - `replace` dispatches album and playlist cards by context URI, and dispatches track cards by resolving the track's album context plus track offset so Spotify does not fall back into an older paused context after the scanned track completes
+   - `queue_tracks` enqueues `track` cards while playback is already active
+   - `queue_tracks` starts playback for `track` cards when the target player is idle and emits an explicit informational event
    - `queue_tracks` falls back to replace dispatch for `album` and `playlist` cards and emits an explicit informational event
 5. The scanner's built-in beep remains the earliest acknowledgement, but the software still emits `scan_received`, `scan_accepted`, and playback success or failure events so the later feedback surfaces stay in sync.
 6. Successful playback or enqueue operations record duplicate state only after the backend confirms success.
+   Playback confirmation prefers the exact requested URI or context when Spotify exposes it in time, but may fall back to "target device is playing" success when Connect metadata is visibly stale.
 
 ### Action Card Handling
 
@@ -286,11 +320,11 @@ EPIC 4 adds a typed action-card path, a shared feedback-state layer, an operator
 - `mode.replace`
   Persists the default EPIC 3 replace behavior in operator state. Subsequent music-card scans use ordinary replacement semantics.
 - `mode.queue`
-  Persists `queue_tracks` in operator state. Subsequent track-card scans queue; album and playlist scans still replace and emit an explicit fallback message.
+  Persists `queue_tracks` in operator state. Subsequent track-card scans queue while playback is already active, but still start playback if the target device is idle. Album and playlist scans still replace and emit an explicit fallback message.
 - `volume.low`, `volume.medium`, `volume.high`
   Map to configured Spotify volume percentages. Failure is explicit if the target device is missing or software volume is unsupported.
 - `setup.wifi-reset`
-  Persists a setup-mode request, clears saved client Wi-Fi through the helper, and transitions the device into setup fallback mode.
+  Persists a setup-mode request, asks the helper to snapshot the prior working client configuration when one exists, clears the active client configuration, enters setup fallback mode, and arms a rollback timer that restores the prior working configuration if setup does not complete in time.
 - `setup.receiver-reauth`
   Persists an auth-required request, marks the operator surface to present the receiver-auth flow prominently, and allows the companion UI to run the wrapped `spotifyd authenticate` sequence without shell access.
 - `system.shutdown`
@@ -307,17 +341,21 @@ EPIC 4 adds a typed action-card path, a shared feedback-state layer, an operator
    - the idle-shutdown timer status
 3. The Wi-Fi setup page collects the minimum client credentials needed to join the normal home network path.
 4. The Python service sends those credentials to a privileged Wi-Fi helper rather than writing system files directly itself.
-5. Once Wi-Fi is configured and client mode is restored, the same companion interface offers receiver-auth or re-auth actions.
-6. Receiver auth uses a helper that wraps `spotifyd authenticate` on the Pi against the real configured cache path, surfaces the approval URL in the browser UI, and reports session status back to the operator page.
-7. After auth succeeds, the helper restarts `spotifyd.service`, and the runtime health monitor waits for the receiver to become visible before returning to `ready`.
+5. If a working client configuration already exists, the helper snapshots it, arms a rollback timer through a root-owned detached path such as a transient `systemd` unit, and only then applies the replacement client configuration.
+6. Once the new client path is confirmed, the helper commits the new configuration and cancels the rollback timer.
+7. If setup AP recovery or the replacement client path is not confirmed before the timeout, the helper restores the prior working client configuration automatically.
+8. Once Wi-Fi is configured and client mode is restored, the same companion interface offers receiver-auth or re-auth actions.
+9. Receiver auth uses a helper that wraps `spotifyd authenticate` on the Pi against the real configured cache path, surfaces the approval URL in the browser UI, and reports session status back to the operator page.
+10. After auth succeeds, the helper restarts `spotifyd.service`, and the runtime health monitor waits for the receiver to become visible before returning to `ready`.
 
 ### Automatic Wi-Fi Fallback Flow
 
 1. On boot, the setup-mode manager checks whether Wi-Fi setup is already requested or whether a usable client Wi-Fi configuration exists.
-2. If Wi-Fi is explicitly reset or no usable client configuration exists, the helper starts the setup AP immediately.
-3. If a normal client configuration exists but network reachability does not recover within the configured fallback grace period during boot, the helper can switch the device into setup AP mode automatically.
-4. Once the setup AP is active, the operator server remains reachable there and the runtime emits `setup_required` instead of `network_unavailable`.
-5. Ordinary runtime outages after the device had already reached `ready` stay in degraded recovery unless the operator later requests a Wi-Fi reset.
+2. If Wi-Fi is explicitly reset and a prior working client configuration exists, the helper starts the setup AP immediately and leaves a rollback timer armed until setup completes or times out.
+3. If Wi-Fi is explicitly reset and no prior working client configuration exists, the helper starts the setup AP immediately without rollback guarantees.
+4. If a normal client configuration exists but network reachability does not recover within the configured fallback grace period during boot, the helper can switch the device into setup AP mode automatically.
+5. Once the setup AP is active, the operator server remains reachable there and the runtime emits `setup_required` instead of `network_unavailable`.
+6. Ordinary runtime outages after the device had already reached `ready` stay in degraded recovery unless the operator later requests a Wi-Fi reset.
 
 ### Idle Monitor Flow
 
@@ -404,7 +442,7 @@ The implementation should stay close to the current package layout and add only 
 ### New Non-Python Files
 
 - `scripts/runtime/jukebox-wifi-helper.sh`
-  Purpose: apply Wi-Fi client credentials, clear saved Wi-Fi config, and switch between client mode and setup AP mode on the Pi.
+  Purpose: apply Wi-Fi client credentials and explicit Wi-Fi reset through a rollback-safe trial path, snapshot and restore the prior working configuration when one exists, and switch between client mode and setup AP mode on the Pi.
 - `scripts/runtime/jukebox-spotifyd-auth-helper.sh`
   Purpose: wrap `spotifyd authenticate`, surface the approval URL, and restart `spotifyd.service` after credentials land in the configured cache path.
 - `scripts/runtime/jukebox-shutdown-helper.sh`
@@ -510,6 +548,8 @@ EPIC 4 adds a small number of app-level settings:
   Default: none
 - `JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS`
   Default: `120`
+- `JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS`
+  Default: `120`
 - `JUKEBOX_WIFI_HELPER_COMMAND`
   Default install target: `/usr/local/libexec/jukebox-wifi-helper`
 - `JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND`
@@ -521,6 +561,7 @@ Design notes:
 
 - keeping helper command paths configurable makes tests easy without touching the host system
 - the setup AP settings live in env because they are deployment-specific appliance config, not repo content
+- the Wi-Fi rollback timeout lives in env so deployments can tune how long remote setup attempts are allowed before the previous client network is restored
 - the operator-state JSON must never include Spotify client secrets, refresh tokens, Wi-Fi passwords, or raw receiver credential files
 - idle shutdown should be explicitly disabled by default on non-Pi local runs so development sessions do not self-terminate unexpectedly
 
@@ -542,6 +583,7 @@ Terminal rendering expands accordingly:
 
 - setup and auth-required modes become visible not-ready states
 - queue-mode fallback from album or playlist to replace behavior becomes a distinct informative line
+- queue-mode fallback from idle track scan to immediate playback becomes a distinct informative line
 - shutdown and Wi-Fi reset become observable setup or system actions before the state transition occurs
 
 Structured logs should add these fields when present:
@@ -589,6 +631,7 @@ The current test layout is already suitable for EPIC 4 if extended carefully.
 - keep the one-shot stdin replay for media cards
 - add a second smoke mode for action-card payload replay using `JUKEBOX_INPUT_BACKEND=stdin`
 - add a smoke assertion that the JSON status surface reports setup or auth-required mode distinctly from `ready`
+- add helper-level coverage for rollback-safe Wi-Fi reset and replacement when a previous working client configuration exists
 
 ### Manual Pi Validation
 
@@ -600,6 +643,7 @@ EPIC 4 manual validation must add:
 - volume preset card validation against the external-speaker baseline
 - shutdown-card validation
 - Wi-Fi reset validation into setup fallback mode
+- remote-safe Wi-Fi reset validation that confirms the prior working client network is restored automatically if setup is not completed before the rollback timeout
 - receiver re-auth card validation into the browser auth flow
 - automatic setup AP fallback validation on a device with no usable Wi-Fi config
 - idle auto-shutdown validation with documented recovery
@@ -615,8 +659,11 @@ Because EPIC 4 explicitly touches networking, the full temporary network interru
 - Stop-card execution on a missing receiver returns the same underlying receiver or network reason codes already used by the Spotify backend.
 - Next-track execution with no active playback context returns an explicit failure such as `no_active_playback`.
 - Queue mode on album or playlist cards emits a specific informational fallback event and still uses replace dispatch.
+- Queue mode on track cards still starts playback immediately when the player is idle, and emits a specific informational fallback event instead of silently queueing against an idle device.
 - Volume preset failure returns a distinct reason such as `volume_control_unavailable` or `device_not_listed`.
 - If the Wi-Fi helper is missing or exits nonzero, the action router surfaces a specific setup-action failure and leaves the device in its prior mode.
+- If a rollback-safe Wi-Fi trial times out before setup AP recovery or new client connectivity is confirmed, the helper restores the prior working client configuration automatically.
+- If the device reboots while a Wi-Fi rollback timer is pending, the helper resolves that state conservatively by restoring the prior working client configuration unless the new configuration was already committed.
 - If the shutdown helper fails, the runtime emits `action_failed` and continues in its prior state.
 - If the operator-state JSON is missing or corrupt, the app recreates it from defaults, logs a reset event, and continues.
 - If the `spotifyd` auth helper fails, the operator UI shows retryable failure state while the runtime remains in `auth_required` until recovery succeeds.

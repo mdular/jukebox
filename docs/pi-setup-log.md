@@ -6,6 +6,25 @@ Secrets are not stored here.
 
 Date: 2026-03-08
 
+## EPIC 4 Validation Status
+
+Status as of 2026-04-12: in progress, not yet complete on this Pi.
+
+Completed so far:
+
+- local automated coverage for the current EPIC 4 runtime, control-card, playback-confirmation, and rollback-safe Wi-Fi helper changes is green
+- remote smoke validation and selected control-card fixes were validated earlier on the Pi
+- the EPIC 4 validation procedure and control assets are documented under [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md), [docs/qr codes/control](/Users/markus/Workspace/jukebox/docs/qr%20codes/control), and [docs/control cards](/Users/markus/Workspace/jukebox/docs/control%20cards)
+
+Still required before EPIC 4 can be treated as validated on this Pi:
+
+- deploy the current rollback-safe Wi-Fi helper implementation to the Pi
+- validate remote-safe Wi-Fi reset and Wi-Fi replacement against the rollback timeout behavior
+- validate the receiver re-auth browser flow end to end on the Pi
+- rerun the remaining EPIC 4 manual validation items, including fallback, idle-shutdown, and post-change reboot or network-regression checks
+
+Treat EPIC 4 as implemented but not yet fully Pi-validated until those items are recorded here with concrete outcomes.
+
 ## EPIC 3 Note
 
 The receiver findings below were recorded against the earlier `raspotify` prototype path.

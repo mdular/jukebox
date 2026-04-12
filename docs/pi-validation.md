@@ -82,15 +82,16 @@ Interpret the status carefully:
 Run these checks on the physical prototype with real cards:
 
 1. Confirm an ordinary Spotify track card still starts playback.
-2. Confirm duplicate suppression still blocks an immediate repeated scan of the same Spotify card.
-3. Confirm `jukebox:playback:stop` pauses active playback.
-4. Confirm `jukebox:playback:next` advances to the next track during active playback.
-5. Confirm `jukebox:mode:queue` changes `runtime.playback_mode` to `queue_tracks`.
-6. In queue mode, confirm a real track card queues during active playback, and starts playback in case the player is idle.
-7. In queue mode, confirm an album or playlist card still replaces playback and emits the explicit fallback event.
-8. Confirm each selected volume preset card applies the configured software volume percentage without changing the external-speaker baseline.
-9. Confirm `jukebox:system:shutdown` triggers a graceful shutdown path rather than an abrupt power cut.
-10. Double-scan one operator-facing card such as Wi-Fi reset or shutdown and confirm the second scan is suppressed by the control debounce window.
+2. If another album or playlist was paused earlier on the same receiver, confirm a track card replaces that prior context instead of dropping back into it after the scanned track finishes.
+3. Confirm duplicate suppression still blocks an immediate repeated scan of the same Spotify card.
+4. Confirm `jukebox:playback:stop` pauses active playback.
+5. Confirm `jukebox:playback:next` advances to the next track during active playback.
+6. Confirm `jukebox:mode:queue` changes `runtime.playback_mode` to `queue_tracks`.
+7. In queue mode, confirm a real track card queues during active playback, and starts playback in case the player is idle.
+8. In queue mode, confirm an album or playlist card still replaces playback and emits the explicit fallback event.
+9. Confirm each selected volume preset card applies the configured software volume percentage without changing the external-speaker baseline.
+10. Confirm `jukebox:system:shutdown` triggers a graceful shutdown path rather than an abrupt power cut.
+11. Double-scan one operator-facing card such as Wi-Fi reset or shutdown and confirm the second scan is suppressed by the control debounce window.
 
 ## Manual Setup and Auth Validation
 

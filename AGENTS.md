@@ -8,6 +8,7 @@
 - Avoid heavy dependencies unless a current spec justifies them.
 - Separate hardware adapters from core logic so the core remains testable.
 - Keep code runnable and testable on non-Pi development machines whenever possible.
+- For Python commands, prefer the repository virtualenv when present. In this repo, use `.venv/bin/python`, `.venv/bin/pytest`, or the existing `make` targets instead of assuming the system `python` points at the right interpreter.
 - Use environment variables for secrets and never commit credentials.
 - Update technical docs when changing repository structure or developer workflow.
 - Keep stubs honest: no fake QR payloads, fake Spotify credentials, or placeholder business content.

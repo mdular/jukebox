@@ -43,6 +43,7 @@ JUKEBOX_IDLE_SHUTDOWN_SECONDS: Final[str] = "JUKEBOX_IDLE_SHUTDOWN_SECONDS"
 JUKEBOX_SETUP_AP_SSID: Final[str] = "JUKEBOX_SETUP_AP_SSID"
 JUKEBOX_SETUP_AP_PASSPHRASE: Final[str] = "JUKEBOX_SETUP_AP_PASSPHRASE"
 JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS: Final[str] = "JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS"
+JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS: Final[str] = "JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS"
 JUKEBOX_WIFI_HELPER_COMMAND: Final[str] = "JUKEBOX_WIFI_HELPER_COMMAND"
 JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND: Final[str] = "JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND"
 JUKEBOX_SHUTDOWN_HELPER_COMMAND: Final[str] = "JUKEBOX_SHUTDOWN_HELPER_COMMAND"
@@ -65,6 +66,7 @@ DEFAULT_VOLUME_PRESET_LOW_PERCENT: Final[int] = 35
 DEFAULT_VOLUME_PRESET_MEDIUM_PERCENT: Final[int] = 55
 DEFAULT_VOLUME_PRESET_HIGH_PERCENT: Final[int] = 75
 DEFAULT_SETUP_FALLBACK_GRACE_SECONDS: Final[float] = 120.0
+DEFAULT_WIFI_ROLLBACK_TIMEOUT_SECONDS: Final[float] = 120.0
 DEFAULT_WIFI_HELPER_COMMAND: Final[str] = "/usr/local/libexec/jukebox-wifi-helper"
 DEFAULT_SPOTIFYD_AUTH_HELPER_COMMAND: Final[str] = (
     "/usr/local/libexec/jukebox-spotifyd-auth-helper"
@@ -115,6 +117,7 @@ class Settings:
     setup_ap_ssid: str | None
     setup_ap_passphrase: str | None
     setup_fallback_grace_seconds: float
+    wifi_rollback_timeout_seconds: float
     wifi_helper_command: str
     spotifyd_auth_helper_command: str
     shutdown_helper_command: str
@@ -187,6 +190,11 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS,
         default=DEFAULT_SETUP_FALLBACK_GRACE_SECONDS,
     )
+    wifi_rollback_timeout_seconds = _read_positive_float(
+        source,
+        JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS,
+        default=DEFAULT_WIFI_ROLLBACK_TIMEOUT_SECONDS,
+    )
     wifi_helper_command = _read_non_empty_string(
         source, JUKEBOX_WIFI_HELPER_COMMAND, default=DEFAULT_WIFI_HELPER_COMMAND
     )
@@ -226,6 +234,7 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         setup_ap_ssid=setup_ap_ssid,
         setup_ap_passphrase=setup_ap_passphrase,
         setup_fallback_grace_seconds=setup_fallback_grace_seconds,
+        wifi_rollback_timeout_seconds=wifi_rollback_timeout_seconds,
         wifi_helper_command=wifi_helper_command,
         spotifyd_auth_helper_command=spotifyd_auth_helper_command,
         shutdown_helper_command=shutdown_helper_command,

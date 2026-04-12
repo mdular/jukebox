@@ -216,6 +216,7 @@ Requirements:
 
 - The selected feedback baseline shall define which part of immediate acknowledgement comes from scanner hardware, software feedback, or both.
 - A valid scan shall produce immediate observable acknowledgement, but playback success or failure shall remain a later distinct outcome.
+- Playback feedback shall not report a failure solely because Spotify Connect metadata or queue state lags behind audible playback on the selected target device.
 - Duplicate suppression, invalid payloads, unsupported content, and unsupported control actions shall remain distinguishable from successful playback.
 - The responsiveness model shall not depend on claiming readiness or success before the underlying state is actually reached.
 
@@ -243,6 +244,7 @@ Requirements:
 
 - Added controls shall not change the core rule that music cards remain the primary interaction path.
 - The selected replace-versus-queue behavior shall be explicitly documented, including any content-type limits needed to keep the behavior honest.
+- In queue mode, track cards may still start playback immediately if the player is idle, so a child-facing scan does not appear to have been ignored.
 - Added controls shall not silently alter the baseline behavior for households that never use control cards.
 - Maintenance or setup behavior shall remain separate from the ordinary child-facing music-card baseline even when delivered through cards.
 
@@ -270,6 +272,8 @@ Requirements:
 - The supported operator flow shall cover receiver auth or re-auth and initial setup on a device that does not yet have Wi-Fi configured.
 - The selected setup flow may use an AP, captive-portal, or equivalent browser-based path from another device, but it shall be documented as one supported baseline.
 - Selected recovery actions, such as returning the device to Wi-Fi setup or requesting receiver re-auth, shall not require source edits or shell-only recovery steps.
+- When Wi-Fi reset or replacement is initiated from a currently working client configuration, the supported flow shall include an automatic rollback timeout that restores the prior working client configuration if setup recovery or new client connectivity is not confirmed in time.
+- That rollback behavior shall remain effective even if the Python app, SSH session, or ordinary client connectivity is interrupted during the Wi-Fi transition.
 - The selected automatic fallback behavior shall define when the appliance re-enters the documented Wi-Fi setup path and when it stays in ordinary degraded recovery instead.
 - The workflow shall remain separate from the normal child-facing interaction model.
 - The documentation shall distinguish receiver-side auth or session bootstrap from the controller app's own secret provisioning requirements.
@@ -450,6 +454,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 - When the operator follows the documented EPIC 4 companion flow from the supported environment
 - Then Wi-Fi and receiver auth can be completed without harvested tokens, source edits, or machine-specific hacks
 - And the required secrets remain outside the repository
+- And when a Wi-Fi reset or replacement is initiated from a known-working client network and the new path is not confirmed before the documented timeout, the prior working client configuration is restored automatically without physical access
 
 ### AC-7 Shutdown and Auto-Shutdown
 
@@ -498,6 +503,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 - A requirements-backed user-facing feedback contract for the polished appliance baseline, including how scanner-beep acknowledgement and software feedback work together.
 - A selected EPIC 4 card-driven control baseline that includes stop, next-track, replace-versus-queue toggles, volume preset cards, graceful shutdown, and selected setup-entry or recovery cards while staying compatible with the child-first interaction model.
 - A documented companion setup, auth, and recovery path suited to the headless appliance, including automatic Wi-Fi fallback behavior.
+- A documented rollback-safe Wi-Fi reset and replacement path for remotely testing setup changes when the device already has a known-working client network.
 - A defined idle-shutdown behavior and recovery expectation appropriate for family appliance use.
 - An explicit statement that EPIC 4 keeps the V1 external-speaker and external-volume baseline while deferring built-in audio controls and internal speakers.
 - Updated operator guidance, diagnostic-surface expectations, and regression-validation expectations that preserve the EPIC 3 baseline.
