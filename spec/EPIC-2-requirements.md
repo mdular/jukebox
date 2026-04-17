@@ -7,14 +7,14 @@ EPIC 2: Raspberry Pi Bring-Up and End-to-End V1 Playback
 ## Purpose
 
 This document defines the requirements for EPIC 2 from [spec/roadmap.md](/Users/markus/Workspace/jukebox/spec/roadmap.md).
-The goal is to move the validated local controller loop onto the Raspberry Pi 3 and prove the first real V1 hardware milestone: scan a physical card on the Pi and hear playback through an external speaker.
+The goal is to move the validated local controller loop onto the Raspberry Pi 3 and prove the first real V1 hardware milestone: scan a physical card on the Pi and hear playback through the mono amp-and-speaker path.
 
 This is a requirements document, not a technical design.
 It defines the behavior that must be proven in EPIC 2 and captures the product and validation choices that should be settled before a technical design is written.
 
 ## Objective
 
-Bring up a headless Raspberry Pi OS Lite environment that can read a real USB HID scanner, run the jukebox controller service, target an on-device Spotify Connect receiver, and produce audible playback through the temporary V1 external-speaker path.
+Bring up a headless Raspberry Pi OS Lite environment that can read a real USB HID scanner, run the jukebox controller service, target an on-device Spotify Connect receiver, and produce audible playback through the temporary V1 mono amp-and-speaker path.
 
 ## Success Definition
 
@@ -23,7 +23,7 @@ EPIC 2 is complete when a Raspberry Pi 3 prototype demonstrates the following:
 - The Pi can be prepared from a fresh Raspberry Pi OS Lite image using a documented headless setup flow.
 - A real USB HID scanner is readable on-device and produces the expected newline-terminated Spotify URI payloads.
 - A valid physical QR card scan triggers playback on the Pi's Spotify Connect receiver.
-- Audio is heard through an external powered speaker connected through the V1 Pi audio path.
+- Audio is heard through the mono amp-and-speaker path connected through the V1 Pi audio path.
 - A clean reboot returns the prototype to a state where another valid scan can trigger playback again without ad hoc bring-up steps.
 - Remaining issues that block appliance-like reliability are documented for EPIC 3.
 
@@ -94,7 +94,7 @@ The concept now fixes the V1 audio baseline to a USB sound card on the Pi becaus
 The milestone should define whether a successful playback test stops at controller dispatch or requires proof that the real hardware output path worked end to end.
 
 - [ ] Treat controller dispatch to the playback backend as sufficient proof
-- [x] Require both an observable playback-start outcome in the software stack and audible output through the external speaker. (Recommended)
+- [x] Require both an observable playback-start outcome in the software stack and audible output through the mono speaker path. (Recommended)
 - [ ] Treat audible playback alone as sufficient proof, even if software-side confirmation is weak
 
 Note: the test stack should be able to confirm playback sucess without relying on human hearing alone.
@@ -132,7 +132,7 @@ Spotify-related setup will require credentials or account-linked configuration, 
 - On-device USB HID scanner intake using a real scanner.
 - Spotify Connect receiver bring-up on the Pi.
 - Running the controller service on the Pi against real scanner input.
-- External powered speaker playback through the V1 Pi audio path.
+- Mono amplifier and single-speaker playback through the V1 Pi audio path.
 - Basic boot-to-ready and clean-reboot validation.
 - Observable feedback and diagnostics sufficient to validate the hardware loop.
 - Setup and operator documentation needed to reproduce the EPIC 2 prototype.
@@ -142,7 +142,7 @@ Spotify-related setup will require credentials or account-linked configuration, 
 - Long-run recovery behavior beyond the clean-reboot baseline needed for EPIC 2.
 - Stronger service supervision or self-healing policies intended for appliance hardening.
 - Final LED behavior, optional stop button behavior, or richer physical controls.
-- Internal speakers, amplifier integration, or other V2 audio work.
+- Further amp or speaker integration, enclosure acoustics, or other later audio work.
 - Enclosure refinements that do not block functional Pi testing.
 - Local-media fallback, queue mode, or other future playback extensions.
 - OTA update strategy, read-only filesystem mode, or similar post-bring-up hardening work.
@@ -216,11 +216,11 @@ Related decisions: `D-8 Playback Proof Threshold` and `D-9 Behavior Continuity f
 
 ### FR-6 Audio Output Path
 
-The EPIC 2 prototype shall use the V1 external-speaker audio path defined by the concept specification.
+The EPIC 2 prototype shall use the V1 mono amp-and-speaker audio path defined by the concept specification.
 
 Requirements:
 
-- Audio playback shall be validated through an external powered speaker connected to the Raspberry Pi audio output path.
+- Audio playback shall be validated through a mono amplifier and single speaker connected to the Raspberry Pi audio output path.
 - The baseline EPIC 2 success target shall use a USB sound card connected to the Pi.
 - The setup and validation flow shall include a concrete way to confirm the selected USB audio output path before blaming the playback service.
 - The Pi's 3.5 mm analog output may remain documented only as a fallback troubleshooting path, not as the baseline success target.
@@ -352,19 +352,19 @@ Related decisions: `D-6 LED Scope for EPIC 2` and `D-8 Playback Proof Threshold`
 
 ### AC-2 Valid Track Card Scan on Pi
 
-- Given the Pi is in a ready state with the scanner attached, the receiver available, and an external powered speaker connected
+- Given the Pi is in a ready state with the scanner attached, the receiver available, and the configured mono amp-and-speaker path connected
 - When a physical card containing a valid `spotify:track:<id>` QR payload is scanned
 - Then the controller accepts the scan
 - And the playback path is triggered on the Pi receiver
-- And audio is heard through the external speaker
+- And audio is heard through the single speaker
 
 ### AC-3 Valid Album or Playlist Card Scan on Pi
 
-- Given the Pi is in a ready state with the scanner attached, the receiver available, and an external powered speaker connected
+- Given the Pi is in a ready state with the scanner attached, the receiver available, and the configured mono amp-and-speaker path connected
 - When a physical card containing a valid `spotify:album:<id>` or `spotify:playlist:<id>` QR payload is scanned
 - Then the controller accepts the scan
 - And the corresponding playback path is triggered
-- And audio is heard through the external speaker
+- And audio is heard through the single speaker
 
 ### AC-4 Duplicate Suppression on Pi
 
@@ -404,7 +404,7 @@ Related decisions: `D-6 LED Scope for EPIC 2` and `D-8 Playback Proof Threshold`
 
 ## Deliverables
 
-- A Raspberry Pi 3 prototype that demonstrates physical scan to audible playback through the V1 external-speaker path.
+- A Raspberry Pi 3 prototype that demonstrates physical scan to audible playback through the V1 mono speaker path.
 - A documented baseline setup procedure for Pi imaging, remote access, networking, scanner intake, receiver bring-up, controller bring-up, and audio validation.
 - A documented basic boot-to-ready and clean-reboot validation flow.
 - A recorded list of unresolved reliability and recovery gaps for EPIC 3.

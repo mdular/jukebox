@@ -103,7 +103,7 @@ JUKEBOX_SMOKE_URI='spotify:track:6rqhFgbbKwnb9MLmUQDhG6' \
 The full operational flow is documented in [`docs/pi-build.md`](/Users/markus/Workspace/jukebox/docs/pi-build.md), [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md), [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md), and [`docs/pi-validation.md`](/Users/markus/Workspace/jukebox/docs/pi-validation.md).
 The current prototype findings that motivated the EPIC 3 receiver change are recorded in [`docs/pi-setup-log.md`](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md).
 
-For EPIC 3 hardware validation, the default external-speaker path remains a USB sound card on the Pi rather than the 3.5 mm analog output.
+For Pi hardware validation, the default audio path remains a USB sound card on the Pi rather than the 3.5 mm analog output, with `/etc/asound.conf` carrying the current mono downmix for the amp-and-single-speaker setup.
 
 ## Runtime Notes
 

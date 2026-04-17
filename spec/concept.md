@@ -7,8 +7,8 @@ Each card contains a Spotify URI. The system scans the code and immediately star
 The device is designed as a wooden cube with a recessed front scan bay and a top tray for storing cards.
 
 The system is designed to be built in stages:
-- V1: Validate the interaction and playback using external speakers
-- V2: Add internal stereo speakers and refined controls
+- V1: Validate the interaction and playback using the mono prototype speaker path
+- V2: Integrate the chosen amp-and-single-speaker design and refined controls
 
 Reference assets kept with this concept:
 - Layout and enclosure render: [`spec/design render.png`](/Users/markus/Workspace/jukebox/spec/design%20render.png)
@@ -125,7 +125,7 @@ Rear
 - Service panel
 
 Sides
-- Reserved for future speaker installation (V2)
+- Reserved for future single-speaker installation (V2)
 
 ---
 
@@ -155,7 +155,10 @@ Ensure consistent QR positioning and minimize glare.
 Temporary output:
 USB sound card connected to the Raspberry Pi
 
-External powered speaker connected via cable exiting rear panel.
+XY-AP50L amplifier feeding one Pioneer TS-G1320F speaker.
+
+Routing:
+`/etc/asound.conf` mixes stereo down to mono and feeds the amplifier's left speaker output.
 
 Optional upgrade:
 Use the Pi's 3.5 mm analog output only as a fallback troubleshooting path if the USB card is unavailable.
@@ -164,21 +167,19 @@ Use the Pi's 3.5 mm analog output only as a fallback troubleshooting path if the
 
 ## V2 Audio (Planned)
 
-Internal stereo system.
+Integrated single-speaker system.
 
 Configuration:
-2x full-range speakers (left and right side panels)
+1x full-range speaker
 
 Amplifier:
-5V Class D stereo amplifier
+XY-AP50L
 
 Controls:
 Panel-mounted rotary encoder for volume
 
-Speaker target specs:
-- Diameter: ~3 inch (≈8 cm)
-- Impedance: 4 ohm
-- Power: 3–5W
+Speaker:
+Pioneer TS-G1320F
 
 Internal structure:
 Separate speaker chamber from electronics.
@@ -195,7 +196,7 @@ Status LED
 
 Optional STOP button
 
-Volume handled externally via speaker.
+Volume handled at the amplifier.
 
 ---
 
@@ -387,7 +388,7 @@ Child-created playlists
 
 QR scanning
 Spotify playback
-External speakers
+Mono speaker path
 Status LED
 Basic enclosure
 
@@ -398,7 +399,7 @@ Validate interaction with children.
 
 ## V2
 
-Internal stereo speakers
+Integrated single-speaker audio
 Volume knob
 Improved acoustics
 Additional controls

@@ -3,14 +3,15 @@
 This document records the current prototype parts and hardware notes that affect software behavior, setup, or build readiness.
 It is intentionally light on enclosure construction detail.
 
-Prototype-specific instance details such as the exact USB audio dongle model or external speaker model can be recorded in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md).
+Prototype-instance observations such as exact wiring notes, ALSA routing tweaks, or validation outcomes can be recorded in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md).
 
 ## Current Prototype Parts
 
 - Raspberry Pi 3 Model B v1.2
 - Fixed-mount QR scanner: Netum NT-91 in USB HID keyboard mode
 - USB sound card for the V1 external-audio baseline: JSAUX ASDIOFJ2 USB Sound Card
-- External powered speaker for the V1 audio path: Anker Soundcore, wired from the USB sound card to the speaker's aux input
+- Amplifier for the current mono audio path: XY-AP50L
+- Speaker for the current mono audio path: Pioneer TS-G1320F, wired to the amplifier's left speaker output
 
 ## Scanner Notes
 
@@ -22,7 +23,8 @@ Prototype-specific instance details such as the exact USB audio dongle model or 
 
 ## Audio Notes
 
-- The current V1 baseline remains a USB sound card feeding an external powered speaker.
-- EPIC 4 keeps volume control external at the speaker rather than adding built-in volume hardware.
-- EPIC 4 volume preset cards are software-side Spotify Connect presets only; they do not replace the speaker's own controls.
-- Internal speakers, amplifier integration, and enclosure acoustics remain separate future work.
+- The current V1 baseline remains a USB sound card feeding the XY-AP50L amplifier and one Pioneer TS-G1320F speaker.
+- `/etc/asound.conf` is part of that baseline because it selects the USB card for services and mixes stereo down to the single speaker on the amplifier's left output.
+- EPIC 4 keeps volume control in the audio hardware path rather than adding built-in GPIO volume hardware.
+- EPIC 4 volume preset cards are software-side Spotify Connect presets only; they do not replace the amplifier's own controls.
+- Further enclosure integration, amplifier mounting, and acoustics remain separate future work.

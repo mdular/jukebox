@@ -339,7 +339,7 @@ That script prepares `/opt/jukebox`, ensures `/etc/jukebox` exists, creates the 
 
 ## 6. Configure and Verify USB Audio Output
 
-The EPIC 3 baseline audio path is a USB sound card feeding an external powered speaker.
+The current baseline audio path is a USB sound card feeding an XY-AP50L amplifier and one Pioneer TS-G1320F speaker.
 After plugging in the USB card and running `sudo raspi-config` to select USB audio, verify the audio path before deploying the jukebox service:
 
 ```sh
@@ -349,19 +349,44 @@ aplay /usr/share/sounds/alsa/Front_Center.wav
 ```
 
 `aplay -l` should show the USB sound card.
-Use `speaker-test` to confirm that the default output reaches the external speaker, then use the `aplay` sample as a simple spoken confirmation.
+Use `speaker-test` to confirm that the default output is audible through the mono amp-and-speaker path, then use the `aplay` sample as a simple spoken confirmation.
 If these commands do not produce sound, fix the Pi-side USB audio routing first and rerun the same checks before proceeding.
 
 One important detail from bring-up: a per-user `/home/pi/.asoundrc` may make manual tests work for the `pi` user while `spotifyd.service` still stays silent.
-To make the USB card the system-wide ALSA default for services as well, copy the working config into `/etc/asound.conf`:
+The current prototype instead relies on a custom `/etc/asound.conf` that both selects the USB sound card for services and mixes stereo down to the single speaker on the amplifier's left output.
 
-```sh
-sudo cp /home/pi/.asoundrc /etc/asound.conf
-sudo systemctl restart spotifyd.service
+Treat `/etc/asound.conf` as an operator-managed part of the audio baseline:
+
+```
+pcm.!default {
+  type plug
+  slave.pcm "mono_left"
+}
+
+pcm.mono_left {
+  type route
+  slave {
+    pcm "hw:1,0"
+    channels 2
+  }
+
+  ttable {
+    0.0 0.5
+    1.0 0.5
+  }
+}
+
+ctl.!default {
+  type hw
+  card 1
+}
 ```
 
-Then test Spotify playback again through `spotifyd`.
-Use `/etc/asound.conf` as the authoritative fix for service playback, not only `~/.asoundrc`.
+- if the Pi already has the working mono mixdown file, keep it and do not overwrite it with a stale `~/.asoundrc`
+- the bootstrap and deploy helpers do not install or replace `/etc/asound.conf`
+- after changing `/etc/asound.conf`, restart `spotifyd.service` and rerun the same `speaker-test` and `aplay` checks
+
+Use `/etc/asound.conf` as the authoritative service-level ALSA config, not only `~/.asoundrc`.
 
 Keep the Pi's 3.5 mm analog output only as a fallback troubleshooting path if the USB card is missing or fails.
 

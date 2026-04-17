@@ -124,7 +124,8 @@ Spotify Connect receiver service on Pi
   -> persistent OAuth/session material
   -> persistent cache directory
   -> USB ALSA output
-  -> external powered speaker
+  -> mono amplifier
+  -> single speaker
 
 systemd
   -> network-online.target

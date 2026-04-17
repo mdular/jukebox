@@ -25,6 +25,15 @@ Still required before EPIC 4 can be treated as validated on this Pi:
 
 Treat EPIC 4 as implemented but not yet fully Pi-validated until those items are recorded here with concrete outcomes.
 
+## Audio Update
+
+Observed on 2026-04-13 while updating the current hardware baseline:
+
+- the current audio path is JSAUX USB audio -> XY-AP50L amplifier -> Pioneer TS-G1320F single speaker
+- the Pioneer speaker is wired to the amplifier's left speaker output
+- `/etc/asound.conf` now carries the mono mixdown needed for that single-speaker path
+- future bootstrap or deploy changes should leave `/etc/asound.conf` untouched unless intentionally replacing the validated audio routing
+
 ## EPIC 3 Note
 
 The receiver findings below were recorded against the earlier `raspotify` prototype path.

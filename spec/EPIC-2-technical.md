@@ -42,7 +42,7 @@ This technical design assumes the checked decisions and notes in [spec/EPIC-2-re
 ## Non-Goals
 
 - No GPIO, LED, button, or enclosure-control work in EPIC 2.
-- No internal speaker or amplifier integration.
+- No enclosure-level amp or speaker integration beyond the basic mono playback path.
 - No hotspot flow, Ethernet fallback, or offline playback mode.
 - No long-run recovery logic beyond the clean-boot and clean-reboot baseline.
 - No queue mode, local media fallback, or richer playback controls.
@@ -126,7 +126,8 @@ USB HID scanner
 raspotify.service
   -> Spotify Connect receiver on the Pi
   -> ALSA USB audio output
-  -> external powered speaker
+  -> mono amplifier
+  -> single speaker
 
 systemd
   -> raspotify.service
@@ -184,7 +185,7 @@ This uses `systemd` restart behavior for boot sequencing and transient bring-up 
 2. The script waits for SSH to return.
 3. It verifies `raspotify.service` and `jukebox.service` are active.
 4. It runs a one-shot software playback smoke test by SSHing into the Pi, overriding `JUKEBOX_INPUT_BACKEND=stdin`, and piping a known-good Spotify URI into `python -m jukebox`.
-5. The physical scanner path and the external speaker remain a manual validation step, but the remote test verifies that the deployed build, runtime config, Spotify auth, target device selection, and playback confirmation path still work after reboot.
+5. The physical scanner path and the mono amp-and-speaker path remain a manual validation step, but the remote test verifies that the deployed build, runtime config, Spotify auth, target device selection, and playback confirmation path still work after reboot.
 
 This split is deliberate: EPIC 2 needs the workflow to be scriptable for the agent, but the physical card-scan and audible-speaker checks still require hardware in the loop.
 
@@ -579,7 +580,7 @@ This gives the agent a repeatable, non-physical smoke test for deployment correc
 Manual checks remain necessary for:
 
 - real physical QR card scan through the mounted scanner
-- audible USB audio output through the external powered speaker
+- audible USB audio output through the mono amplifier and single speaker
 - confirming that the physical setup matches the documented scanner path and speaker connection
 
 EPIC 2 should document these as manual smoke steps, not pretend they can be fully automated from the repo alone.

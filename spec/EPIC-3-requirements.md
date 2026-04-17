@@ -16,7 +16,7 @@ This document treats the recorded EPIC 2 findings in [docs/pi-setup-log.md](/Use
 
 - the `evdev` scanner path is validated on the Pi
 - the USB sound card is the V1 audio baseline
-- `/etc/asound.conf` is required today for service-level USB audio output
+- `/etc/asound.conf` is required today for service-level USB audio output and the current mono downmix
 - clean reboot now returns `jukebox.service` to a stable ready state without a restart loop
 - the remaining prototype gap is receiver visibility after reboot, which still depends on manual activation from another Spotify client
 - the remaining hardening work must solve the receiver-session and Connect-discovery boundary, not only the controller app's Spotify Web API token handling
@@ -115,7 +115,7 @@ The roadmap calls for appliance hardening, so EPIC 3 needs a stronger validation
 
 ## Out of Scope
 
-- Internal speaker integration, amplifier selection, or other V2 audio work.
+- Further amp or speaker integration, enclosure acoustics, or other later audio work.
 - New control-surface features such as volume knob, next-track, or expanded interaction modes.
 - Local media fallback, queue behavior, story-card behavior, or other playback-mode expansion.
 - Hotspot setup flows, captive portal setup, offline playback, OTA updates, or read-only filesystem work.
@@ -433,10 +433,10 @@ This determines which physical control should be considered first once the harde
 
 ### H-3 Audio Evolution Direction
 
-This determines how aggressively EPIC 4 should move from the stable V1 external-speaker baseline toward the concept's V2 audio direction.
+This determines how aggressively EPIC 4 should move from the stable V1 mono amp-and-speaker baseline toward the concept's V2 audio direction.
 
-- [ ] Keep the hardened V1 external-speaker baseline stable while planning internal audio as a separate EPIC 4 refinement. (Recommended)
-- [ ] Begin integrated internal-audio transition immediately in EPIC 4
+- [ ] Keep the hardened V1 mono amp-and-speaker baseline stable while planning later integrated audio as a separate EPIC 4 refinement. (Recommended)
+- [ ] Begin integrated audio transition immediately in EPIC 4
 - [ ] Decide later
 
 ### H-4 Standalone Receiver Auth UX

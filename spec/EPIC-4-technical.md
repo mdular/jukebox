@@ -22,7 +22,7 @@ This technical design assumes the checked decisions and notes in [spec/EPIC-4-re
 - Immediate acknowledgement remains distinct from playback confirmation, and the existing Netum NT-91 scanner beep is treated as part of that immediate acknowledgement rather than ignored.
 - Stop behavior is card-driven first, not hardware-button driven.
 - EPIC 4 reopens broader card-control design and includes the checked D-10 control items in V1 scope.
-- Volume remains physically external, and the external-speaker audio baseline remains unchanged even though optional software-side volume preset cards are now in scope.
+- Volume remains in the hardware audio path, and the mono amp-and-speaker baseline remains unchanged even though optional software-side volume preset cards are now in scope.
 - The operator flow expands into a browser-based companion configuration interface that can cover setup, receiver auth or re-auth, and selected recovery actions.
 - Maintenance ergonomics stay focused and lightweight, including a diagnostic JSON surface rather than a full dashboard.
 - EPIC 4 regression validation reuses the EPIC 3 boot, recovery, and scan-to-playback baseline and must rerun the network-interruption checks because the selected scope now touches networking.
@@ -32,7 +32,7 @@ This design makes four explicit implementation assumptions so the expanded scope
 
 - The additional setup card selected under D-10 will be implemented as a receiver re-auth entry card, because receiver auth and re-auth are already selected EPIC 4 maintenance flows.
 - Replace-versus-queue mode is implemented as `replace` versus `queue_tracks`. Track cards queue while playback is already active, but still start playback if the target player is idle. Album and playlist cards keep replace semantics and surface that limitation honestly.
-- Volume preset cards are implemented through Spotify Connect software volume percentages. They complement but do not replace the external speaker's own volume controls.
+- Volume preset cards are implemented through Spotify Connect software volume percentages. They complement but do not replace the amplifier's own volume controls.
 - Automatic Wi-Fi fallback is a setup-access behavior for missing Wi-Fi configuration, explicit Wi-Fi reset, or sustained boot-time inability to reach a configured network. Ordinary transient runtime outages remain degraded-state recovery, not immediate AP fallback.
 
 ## Design Goals
@@ -40,7 +40,7 @@ This design makes four explicit implementation assumptions so the expanded scope
 - Keep the current Spotify scan-to-playback behavior intact for ordinary music cards.
 - Add explicit non-Spotify control-card support without mixing operator actions into the normal music-card path implicitly.
 - Reuse the current event-driven runtime so terminal output, structured logs, the new operator interface, and the idle monitor share one canonical status model.
-- Preserve the V1 external-speaker baseline while adding queue toggles, volume presets, and next-track in a way that stays honest about Spotify API limits.
+- Preserve the V1 mono amp-and-speaker baseline while adding queue toggles, volume presets, and next-track in a way that stays honest about Spotify API limits.
 - Isolate privileged Wi-Fi, shutdown, and receiver-auth work behind narrow helper boundaries rather than expanding the main Python process privileges.
 - Make explicit Wi-Fi reset and Wi-Fi replacement safe to test remotely by using helper-owned rollback instead of one-way client-network mutations.
 - Keep the operator interface lightweight enough for Raspberry Pi 3 by using the Python standard library instead of a heavy web framework.
@@ -49,7 +49,7 @@ This design makes four explicit implementation assumptions so the expanded scope
 
 ## Non-Goals
 
-- No built-in volume control, internal audio, amplifier integration, or speaker-acoustics work.
+- No built-in volume control, further amp or speaker integration, or enclosure-acoustics work.
 - No physical stop button, rotary encoder, next-track button, or GPIO control surface in EPIC 4.
 - No broader management dashboard or child-facing daily-use web UI.
 - No printer-friendly QR generator, local playback fallback, story cards, podcast cards, or queue mode as the new primary playback model.
@@ -114,7 +114,7 @@ Those are compatible only if the design treats them as software-side convenience
 
 Resolution:
 
-- keep the external speaker as the only required physical volume surface
+- keep the amplifier as the only required physical volume surface
 - implement volume preset cards through the Spotify Web API volume endpoint
 - make the preset percentages explicit config, not hard-coded behavior
 - surface `volume_control_unavailable` honestly if the active receiver cannot honor software volume changes
@@ -285,7 +285,7 @@ EPIC 4 adds a typed action-card path, a shared feedback-state layer, an operator
    - an action card under the new `jukebox:<group>:<action>` namespace
 3. For Spotify media cards, duplicate suppression behaves the same as EPIC 3.
 4. The controller resolves the current playback mode from operator state:
-   - `replace` dispatches album and playlist cards by context URI, and dispatches track cards by resolving the track's album context plus track offset so Spotify does not fall back into an older paused context after the scanned track completes
+   - `replace` dispatches album and playlist cards by context URI, and dispatches track cards as single-track playback that pauses again when the scanned track finishes so playback does not fall back into an older paused context or continue into the scanned track's album
    - `queue_tracks` enqueues `track` cards while playback is already active
    - `queue_tracks` starts playback for `track` cards when the target player is idle and emits an explicit informational event
    - `queue_tracks` falls back to replace dispatch for `album` and `playlist` cards and emits an explicit informational event
@@ -640,7 +640,7 @@ EPIC 4 manual validation must add:
 - real stop-card validation during playback
 - next-track validation during active playback
 - queue-mode validation for a track card and explicit fallback validation for album or playlist cards
-- volume preset card validation against the external-speaker baseline
+- volume preset card validation against the mono amp-and-speaker baseline
 - shutdown-card validation
 - Wi-Fi reset validation into setup fallback mode
 - remote-safe Wi-Fi reset validation that confirms the prior working client network is restored automatically if setup is not completed before the rollback timeout
@@ -687,7 +687,7 @@ Because EPIC 4 explicitly touches networking, the full temporary network interru
 
 - The setup AP implementation depends on the exact network stack present on the supported Raspberry Pi OS image. The helper boundary keeps that uncertainty contained, but the real image must be verified during implementation.
 - `spotifyd authenticate` is an external CLI contract. Wrapping it is less risky than reimplementing receiver credentials, but it still needs a real Pi validation pass.
-- Spotify software volume support may behave differently across receiver versions or output paths. Failure handling must stay honest so the external speaker remains the reliable baseline.
+- Spotify software volume support may behave differently across receiver versions or output paths. Failure handling must stay honest so the mono amp-and-speaker path remains the reliable baseline.
 - Queue mode is intentionally limited to track cards. That is the right V1 compromise, but it may still need real-world explanation during the post-standalone review.
 - Action cards such as Wi-Fi reset and shutdown are powerful. The design therefore treats them as explicit operator-only cards, debounces them, and keeps physical-control follow-up out of EPIC 4.
 - Idle shutdown depends on correctly observing whether playback is still active. The design must fail safe toward staying on if that signal is uncertain.

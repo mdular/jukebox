@@ -29,13 +29,14 @@ The deployment scripts read:
 
 ## Bootstrap Once
 
-Run the initial bootstrap after the Pi is reachable over SSH, `spotifyd.service` is installed, and the USB audio path has already been verified:
+Run the initial bootstrap after the Pi is reachable over SSH, `spotifyd.service` is installed, and the USB audio path plus `/etc/asound.conf` mono mixdown have already been verified:
 
 ```sh
 JUKEBOX_PI_HOST=jukebox.local ./scripts/pi-bootstrap.sh
 ```
 
 That step installs baseline system packages, validates the receiver-service baseline, creates `/opt/jukebox`, and seeds `/etc/jukebox/jukebox.env` from the tracked example when necessary.
+It does not install or overwrite `/etc/asound.conf`; keep the custom mono routing for the XY-AP50L plus single-speaker path in place separately.
 
 ## Deploy the Current Working Tree
 
@@ -55,6 +56,7 @@ The deploy helper:
 6. reloads `systemd`, enables the service, and restarts it
 
 The deploy path assumes `/etc/jukebox/jukebox.env` already exists and contains real secrets.
+It also leaves `/etc/asound.conf` untouched, so Pi audio routing remains an operator-managed part of the baseline rather than a tracked deploy artifact.
 
 ## Smoke and Reboot Validation
 

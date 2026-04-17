@@ -15,13 +15,13 @@ It defines the user-facing polish, selected control and setup expansion, applian
 This document treats the current EPIC 3 baseline recorded in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) and [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md) as the starting point for EPIC 4:
 
 - autonomous reboot, power-cycle, and same-LAN recovery are already expected on the supported Pi baseline
-- the scan-to-playback loop is already validated with real cards and external-speaker playback
+- the scan-to-playback loop is already validated with real cards and mono amp-and-speaker playback
 - the existing runtime state model already distinguishes ready, degraded, and major failure states
-- the V1 audio baseline is still external playback through the Pi's USB sound card and powered speaker
+- the V1 audio baseline is still playback through the Pi's USB sound card, mono amplifier, and single speaker
 
 ## Objective
 
-Refine the stable appliance baseline into a V1 release-worthy standalone jukebox with clearer feedback, selected card-driven controls, lower-friction operator maintenance flows, and a disciplined bridge to V2 that leaves internal speakers and broader field-driven experimentation for the next phase.
+Refine the stable appliance baseline into a V1 release-worthy standalone jukebox with clearer feedback, selected card-driven controls, lower-friction operator maintenance flows, and a disciplined bridge to V2 that leaves further audio integration and broader field-driven experimentation for the next phase.
 
 ## Success Definition
 
@@ -31,7 +31,7 @@ EPIC 4 is complete when the polished appliance baseline demonstrates the followi
 - The selected card-driven control baseline, including the checked D-10 items promoted into scope, works without making ordinary music-card use confusing or fragile.
 - Routine operator tasks such as initial Wi-Fi setup, automatic fallback setup access, receiver auth or re-auth, shutdown, and selected recovery flows are supported by a documented companion setup path rather than machine-specific bring-up hacks.
 - Automatic Wi-Fi fallback and long-idle shutdown make the appliance more self-managing without weakening the EPIC 3 reboot, recovery, and scan-to-playback baseline.
-- The external-speaker and speaker-managed-volume baseline remain explicit for V1, even if optional software-side volume preset cards are added.
+- The mono amp-and-speaker and hardware-volume baseline remain explicit for V1, even if optional software-side volume preset cards are added.
 - The repository clearly separates EPIC 4 V1 deliverables from the remaining post-roadmap backlog, and it records a post-standalone review checkpoint for further UX experimentation before V2 hardware or interaction commitments are made.
 
 ## Decision Checklist
@@ -80,19 +80,19 @@ Note: EPIC 4 should still use card-based interaction before committing to many p
 
 EPIC 4 needs to define the direction for on-device volume handling without accidentally turning direction-setting into an overgrown controls project.
 
-- [x] Keep volume entirely external for now and defer the built-in direction. The V1 audio setup uses an external speaker and already has practical volume controls, so this is not a current user-experience gap. Revisit built-in volume in the V2 backlog.
+- [x] Keep volume entirely in the hardware path for now and defer the built-in direction. The V1 audio setup uses a mono amplifier and single speaker and already has practical hardware volume control, so this is not a current user-experience gap. Revisit built-in volume in the V2 backlog.
 - [ ] Define the product baseline for a future integrated volume control centered on the concept's single volume knob, without requiring a broader on-device control surface. (Recommended)
 - [ ] Expand EPIC 4 into broader on-device audio-control behavior.
 
-Note: selected EPIC 4 volume preset cards are compatible with this decision because they are optional software-side presets on top of the external-speaker baseline, not a commitment to built-in physical volume hardware.
+Note: selected EPIC 4 volume preset cards are compatible with this decision because they are optional software-side presets on top of the mono amp-and-speaker baseline, not a commitment to built-in physical volume hardware.
 
 ### D-6 Audio Transition Scope
 
-The stable V1 audio baseline is still the external speaker path, but EPIC 4 needs to decide whether it only defines the bridge to V2 audio or also starts the transition.
+The stable V1 audio baseline is still the mono amp-and-speaker path, but EPIC 4 needs to decide whether it only defines the bridge to V2 audio or also starts the transition.
 
-- [x] Keep EPIC 4 entirely on the external-speaker baseline with no explicit V2 audio bridge.
-- [ ] Preserve the validated external-speaker baseline while defining the direction, constraints, and acceptance boundary for a later internal-audio transition. (Recommended)
-- [ ] Require EPIC 4 to complete an integrated internal-audio transition.
+- [x] Keep EPIC 4 entirely on the mono amp-and-speaker baseline with no explicit V2 audio bridge.
+- [ ] Preserve the validated mono amp-and-speaker baseline while defining the direction, constraints, and acceptance boundary for a later integrated-audio transition. (Recommended)
+- [ ] Require EPIC 4 to complete an integrated audio transition.
 
 ### D-7 Standalone Receiver Auth Flow
 
@@ -167,7 +167,7 @@ Use this checklist to distinguish which deferred ideas are now promoted into EPI
 - [ ] OTA updates
 - [x] Auto-shutdown after a long idle period
 - [ ] Built-in volume control
-- [ ] Internal speaker selection, amplifier integration, and enclosure acoustics
+- [ ] Single-speaker integration, amplifier mounting, and enclosure acoustics
 
 ## In Scope
 
@@ -178,7 +178,7 @@ Use this checklist to distinguish which deferred ideas are now promoted into EPI
 - Automatic Wi-Fi fallback behavior that helps the appliance re-enter a documented setup path when Wi-Fi is absent or setup mode is explicitly requested.
 - Lightweight maintenance ergonomics such as a healthcheck endpoint returning diagnostic JSON and current config state.
 - Long-idle auto-shutdown behavior that preserves simple recovery through normal power-on.
-- Preserving the external speaker-managed volume baseline while explicitly deferring built-in volume and internal-audio work to backlog.
+- Preserving the mono amp-and-speaker and hardware-volume baseline while explicitly deferring built-in volume and further audio-integration work to backlog.
 - Regression validation needed to prove the polished experience still meets the EPIC 3 reliability baseline after the selected EPIC 4 networking, control, setup, and shutdown changes.
 - A labeled post-roadmap backlog plus a post-standalone review checkpoint that separates deferred expansion ideas from EPIC 4 deliverables.
 
@@ -189,7 +189,7 @@ Use this checklist to distinguish which deferred ideas are now promoted into EPI
 - Queue mode as the new primary playback model beyond the selected card-driven replace-versus-queue toggle behavior.
 - OTA updates, read-only filesystem mode, or other appliance-platform work not selected in D-10.
 - A child-facing daily-use management UI or a broader dashboard beyond the selected setup, auth, status, and healthcheck flows.
-- Built-in volume controls, internal speakers, amplifier integration, enclosure acoustics, or other V2 audio implementation work in EPIC 4.
+- Built-in volume controls, further amp or speaker integration, enclosure acoustics, or other V2 audio implementation work in EPIC 4.
 - Additional physical controls beyond the selected card-first EPIC 4 control baseline.
 
 ## Functional Requirements
@@ -250,16 +250,16 @@ Requirements:
 
 Related decisions: `D-3 Stop Action Surface`, `D-4 Additional Control Scope`, and `D-10 V1 Scope Boundary`.
 
-### FR-5 External Volume Baseline and Optional Preset Cards
+### FR-5 Hardware Volume Baseline and Optional Preset Cards
 
-EPIC 4 shall preserve the current external-volume baseline while allowing the selected preset-card experiments.
+EPIC 4 shall preserve the current hardware-volume baseline while allowing the selected preset-card experiments.
 
 Requirements:
 
-- The current external speaker shall remain the only required physical volume-control surface for EPIC 4.
+- The current amplifier controls shall remain the only required physical volume-control surface for EPIC 4.
 - If volume preset cards are selected, they shall be documented as optional software-side conveniences rather than a redefinition of the hardware volume direction.
-- The deliverables shall state explicitly that built-in volume control and internal audio remain deferred.
-- EPIC 4 shall not imply partial support for built-in volume or internal audio if those features are not actually delivered.
+- The deliverables shall state explicitly that built-in volume control and further audio integration remain deferred.
+- EPIC 4 shall not imply partial support for built-in volume or further audio integration if those features are not actually delivered.
 
 Related decisions: `D-5 Volume Control Direction`, `D-6 Audio Transition Scope`, and `D-10 V1 Scope Boundary`.
 
@@ -345,7 +345,7 @@ Requirements:
 - The EPIC 4 deliverables shall identify which reviewed parking-lot ideas were promoted into the V1 release scope and which remain explicitly deferred after the roadmap is complete.
 - Deferred items shall be labeled as backlog rather than implied product behavior.
 - The outputs shall record a post-standalone review checkpoint for the selected EPIC 4 control and feedback experiments so later V2 control or feedback work can be guided by field usage.
-- The documentation shall make clear that V2 remains focused on internal speakers and any later physical feedback, control, or usage-mode decisions informed by real standalone use.
+- The documentation shall make clear that V2 remains focused on the chosen single-speaker audio direction and any later physical feedback, control, or usage-mode decisions informed by real standalone use.
 
 Related decisions: `D-6 Audio Transition Scope` and `D-10 V1 Scope Boundary`.
 
@@ -474,7 +474,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 
 - Given an operator reviews the EPIC 4 deliverables
 - When checking what EPIC 4 does and does not change about the audio path
-- Then the continued external-speaker and speaker-managed-volume baseline is explicit
+- Then the continued mono amp-and-speaker and hardware-volume baseline is explicit
 - And the boundary between optional preset-card behavior and deferred built-in audio or volume work is clear
 
 ### AC-10 Maintenance Ergonomics
@@ -505,7 +505,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 - A documented companion setup, auth, and recovery path suited to the headless appliance, including automatic Wi-Fi fallback behavior.
 - A documented rollback-safe Wi-Fi reset and replacement path for remotely testing setup changes when the device already has a known-working client network.
 - A defined idle-shutdown behavior and recovery expectation appropriate for family appliance use.
-- An explicit statement that EPIC 4 keeps the V1 external-speaker and external-volume baseline while deferring built-in audio controls and internal speakers.
+- An explicit statement that EPIC 4 keeps the V1 mono amp-and-speaker and hardware-volume baseline while deferring built-in audio controls and further audio integration.
 - Updated operator guidance, diagnostic-surface expectations, and regression-validation expectations that preserve the EPIC 3 baseline.
 - A labeled post-roadmap backlog plus a post-standalone review checkpoint for future control, feedback, and V2 planning.
 
@@ -513,12 +513,12 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 
 These are not EPIC 4 blockers, but they should be captured so the next planning cycle starts from an explicit V1 release baseline rather than vague carry-over.
 
-### H-1 Internal Audio Delivery Phase
+### H-1 Audio Delivery Phase
 
-This determines how the project should treat the concept's internal speaker direction after the roadmap is complete.
+This determines how the project should treat the concept's single-speaker audio direction after the roadmap is complete.
 
-- [ ] Start a dedicated post-roadmap phase for integrated internal audio once EPIC 4 polish is stable. (Recommended)
-- [ ] Fold internal audio into ongoing EPIC 4 work if possible
+- [ ] Start a dedicated post-roadmap phase for integrated audio refinement once EPIC 4 polish is stable. (Recommended)
+- [ ] Fold integrated audio refinement into ongoing EPIC 4 work if possible
 - [ ] Decide later
 
 ### H-2 Post-Standalone Control and Feedback Review
@@ -549,6 +549,6 @@ This determines how to treat the remaining roadmap parking-lot items that affect
 
 - This document intentionally builds on the current EPIC 3 baseline recorded in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) and [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md) rather than reopening those hardening outcomes.
 - This document intentionally promotes the checked D-10 items into EPIC 4 scope because they complete the V1 standalone appliance boundary described in [spec/roadmap.md](/Users/markus/Workspace/jukebox/spec/roadmap.md).
-- This document intentionally leaves V2 centered on internal speakers and any later physical feedback, control, or usage-mode work that should be informed by real standalone usage.
+- This document intentionally leaves V2 centered on the chosen single-speaker audio direction and any later physical feedback, control, or usage-mode work that should be informed by real standalone usage.
 - This document intentionally does not choose a technical module layout, GPIO wiring plan, browser implementation, or auth implementation mechanism.
 - Those choices belong in [spec/EPIC-4-technical.md](/Users/markus/Workspace/jukebox/spec/EPIC-4-technical.md).

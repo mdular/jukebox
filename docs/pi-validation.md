@@ -82,16 +82,17 @@ Interpret the status carefully:
 Run these checks on the physical prototype with real cards:
 
 1. Confirm an ordinary Spotify track card still starts playback.
-2. If another album or playlist was paused earlier on the same receiver, confirm a track card replaces that prior context instead of dropping back into it after the scanned track finishes.
-3. Confirm duplicate suppression still blocks an immediate repeated scan of the same Spotify card.
-4. Confirm `jukebox:playback:stop` pauses active playback.
-5. Confirm `jukebox:playback:next` advances to the next track during active playback.
-6. Confirm `jukebox:mode:queue` changes `runtime.playback_mode` to `queue_tracks`.
-7. In queue mode, confirm a real track card queues during active playback, and starts playback in case the player is idle.
-8. In queue mode, confirm an album or playlist card still replaces playback and emits the explicit fallback event.
-9. Confirm each selected volume preset card applies the configured software volume percentage without changing the external-speaker baseline.
-10. Confirm `jukebox:system:shutdown` triggers a graceful shutdown path rather than an abrupt power cut.
-11. Double-scan one operator-facing card such as Wi-Fi reset or shutdown and confirm the second scan is suppressed by the control debounce window.
+2. If another album or playlist was paused earlier on the same receiver, confirm a track card replaces that prior context and then stops again after the scanned track finishes.
+3. After that scanned track finishes, scan a different track card and confirm it starts cleanly without needing a phone or desktop client to use "play on this device" first.
+4. Confirm duplicate suppression still blocks an immediate repeated scan of the same Spotify card.
+5. Confirm `jukebox:playback:stop` pauses active playback.
+6. Confirm `jukebox:playback:next` advances to the next track during active playback.
+7. Confirm `jukebox:mode:queue` changes `runtime.playback_mode` to `queue_tracks`.
+8. In queue mode, confirm a real track card queues during active playback, and starts playback in case the player is idle.
+9. In queue mode, confirm an album or playlist card still replaces playback and emits the explicit fallback event.
+10. Confirm each selected volume preset card applies the configured software volume percentage without changing the mono amp-and-speaker baseline.
+11. Confirm `jukebox:system:shutdown` triggers a graceful shutdown path rather than an abrupt power cut.
+12. Double-scan one operator-facing card such as Wi-Fi reset or shutdown and confirm the second scan is suppressed by the control debounce window.
 
 ## Manual Setup and Auth Validation
 
@@ -139,9 +140,9 @@ Rerun these checks after the new setup, control, and shutdown changes:
 1. Confirm the mounted scanner reads a real laminated card.
 2. Confirm the service logs the scan from the `evdev` source.
 3. Confirm the accepted scan reaches playback success rather than only a dispatch attempt.
-4. Confirm the external powered speaker remains the baseline audio path.
-5. Confirm `speaker-test -c 2 -t wav` and a simple `aplay` sample are still audible before blaming the jukebox app.
-6. Confirm a successful scan is audible on the speaker after deployment.
+4. Confirm the mono amplifier and single-speaker path remains the baseline audio path.
+5. Confirm `speaker-test -c 2 -t wav` and a simple `aplay` sample are still audible through the single speaker before blaming the jukebox app.
+6. Confirm a successful scan is audible on the single speaker after deployment.
 
 ## Reboot, Power-Cycle, and Network Regression Validation
 
@@ -181,4 +182,5 @@ When the assembled device is not behaving correctly, use this order:
 3. Read the last 50 lines of both journals.
 4. Fetch `status.json` and note `feedback.display_state`, `runtime.playback.code`, `runtime.setup_required`, `runtime.auth_required`, and `runtime.idle`.
 5. Run `./scripts/pi-smoke.sh`.
-6. Only move on to scanner or speaker debugging after the status surface makes the controller-auth, receiver, network, setup, and idle state clear.
+6. If Spotify playback and Spotify's reported UI state disagree, follow [docs/spotify-connect-debug.md](/Users/markus/Workspace/jukebox/docs/spotify-connect-debug.md) before changing backend behavior.
+7. Only move on to scanner or speaker debugging after the status surface makes the controller-auth, receiver, network, setup, and idle state clear.

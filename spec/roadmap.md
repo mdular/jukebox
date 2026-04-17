@@ -11,7 +11,7 @@ Its purpose is to define the build order, validation milestones, and expected ou
 ## Roadmap Principles
 
 - Validate the core QR-to-playback loop before committing to Raspberry Pi integration details.
-- Treat V1 external-speaker playback as the first real-world success target.
+- Treat V1 mono speaker playback through the Pi USB audio path as the first real-world success target.
 - Prioritize reliability, recovery, and low maintenance before adding polish or extra controls.
 - Include hardware-related work only when it affects software behavior, Pi setup, or readiness for the physical build.
 - Defer detailed implementation choices, part selection, and interface specifics to the per-EPIC requirements and technical spec documents.
@@ -49,13 +49,13 @@ Prove the core interaction without Raspberry Pi dependency: a scanned QR payload
 - Raspberry Pi deployment model, startup behavior, and service supervision.
 - GPIO integration, LED wiring details, and button handling.
 - Wi-Fi resilience, power-loss recovery, and unattended restart behavior.
-- Enclosure design, scanner mounting geometry, and internal audio decisions.
+- Enclosure design, scanner mounting geometry, and later audio decisions.
 
 ## EPIC 2: Raspberry Pi Bring-Up and End-to-End V1 Playback
 
 ### Objective
 
-Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playback milestone: scan a physical card on the Pi and hear playback through an external speaker.
+Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playback milestone: scan a physical card on the Pi and hear playback through the mono amp-and-speaker path.
 
 ### Scope
 
@@ -63,7 +63,7 @@ Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playbac
 - Establish the baseline Pi runtime environment, including networking and device access needed for the scanner and audio output.
 - Set up a Spotify Connect receiver on the Pi and confirm it can act as the playback target.
 - Run the controller service on the Pi and connect it to real USB scanner input.
-- Use the temporary V1 audio path with an external powered speaker through the Pi's USB sound card.
+- Use the temporary V1 audio path with a mono amplifier and single speaker through the Pi's USB sound card.
 - Define the expected boot-to-ready path for the software stack at a basic V1 level.
 
 ### Validation Focus
@@ -71,7 +71,7 @@ Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playbac
 - The Raspberry Pi boots into a usable environment without requiring ad hoc manual setup steps.
 - The scanner is readable on-device and produces the expected payload format.
 - The controller service can translate a real scan into playback on the configured Spotify receiver.
-- Audio plays through the external speaker path with acceptable baseline reliability for concept validation.
+- Audio plays through the mono amp-and-speaker path with acceptable baseline reliability for concept validation.
 - A clean reboot returns the device to a stable service-ready state, and any remaining receiver-activation gap is documented explicitly for the next EPIC.
 
 ### Outputs
@@ -85,7 +85,7 @@ Move the validated core loop onto the Raspberry Pi 3 and reach a real V1 playbac
 
 - Long-run recovery behavior and stronger service supervision policies.
 - Final LED behavior and any optional physical controls beyond what is needed for basic V1 validation.
-- Internal speaker architecture, amplifier choice, and V2 audio integration.
+- Further amp-and-speaker integration, enclosure acoustics, and later audio refinements.
 - Physical enclosure refinements that do not block functional Pi testing.
 
 ## EPIC 3: Appliance Hardening and Build Readiness
@@ -121,7 +121,7 @@ Turn the working Pi prototype into a stable, low-maintenance appliance candidate
 ### Deferred Decisions
 
 - Premium UX refinements that do not improve baseline reliability.
-- Internal stereo implementation and acoustic tuning.
+- Integrated single-speaker refinement and acoustic tuning.
 - Expanded control surface such as next-track or richer interaction modes.
 - Future playback modes, including local media fallback and queue-oriented behavior.
 
@@ -135,7 +135,7 @@ Add refinement after the stable V1 appliance baseline exists, while keeping the 
 
 - Refine user-facing feedback behavior, especially around LED signaling and perceived responsiveness.
 - Introduce optional controls that fit the concept without increasing operational complexity, such as a stop button.
-- Define the direction for volume control and the transition from external V1 audio to a more integrated V2 audio approach.
+- Define the direction for volume control and the transition from the current mono amp-and-speaker path to a more integrated V2 audio approach.
 - Improve maintenance ergonomics where they reduce friction without destabilizing the core loop.
 - Define an appliance-grade standalone receiver-auth or re-auth path, such as a browser-based operator flow, so receiver credential bootstrap does not depend on harvested tokens or machine-specific bring-up hacks.
 - Separate immediate polish work from longer-term backlog concepts so V2 planning stays disciplined.
@@ -166,7 +166,7 @@ Add refinement after the stable V1 appliance baseline exists, while keeping the 
 
 ### Deferred Decisions
 
-- Detailed internal speaker selection, amplifier integration, and enclosure acoustics.
+- Detailed amplifier mounting, single-speaker integration, and enclosure acoustics.
 - Local playback fallback implementation details and media mapping behavior.
 - Queue mode, story cards, podcast cards, and other feature expansions beyond the core jukebox loop.
 - Any companion configuration tooling or broader management interface.
@@ -174,7 +174,7 @@ Add refinement after the stable V1 appliance baseline exists, while keeping the 
 ## Sequencing Notes
 
 - EPIC 1 must finish before EPIC 2 begins in earnest because the local controller loop is the cheapest place to validate core behavior.
-- EPIC 2 establishes the first real-world success milestone: physical scan to playback on Raspberry Pi with external speakers.
+- EPIC 2 establishes the first real-world success milestone: physical scan to playback on Raspberry Pi with the mono speaker path.
 - EPIC 3 is the release gate for enclosure build readiness; polish work should not overtake it.
 - EPIC 4 should only start once the system is already dependable enough to be treated as an appliance rather than a prototype.
 
