@@ -1,0 +1,7 @@
+interface:
+  display_name: "Workflow Retro"
+  short_description: "Reassess failing workflows before another fix"
+  default_prompt: "Use $workflow-retro to stop the current iteration, grade the evidence, and challenge the diagnosis, assumptions, and workflow before proceeding."
+
+policy:
+  allow_implicit_invocation: false
