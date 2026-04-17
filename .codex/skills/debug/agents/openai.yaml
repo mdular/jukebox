@@ -1,0 +1,7 @@
+interface:
+  display_name: "Debug"
+  short_description: "Evidence-first debugging for this repo"
+  default_prompt: "Use $debug to diagnose the issue from code, tests, and raw API behavior before proposing a fix."
+
+policy:
+  allow_implicit_invocation: false

@@ -40,6 +40,15 @@ Those files do not exist on the current branch at the time of this retro, so the
 Anything not preserved in commit history is treated as unknown.
 Any interpretation about session behavior, tooling, or model workflow is labeled as an inference.
 
+This retro also uses two supplemental workflow inputs outside repo history:
+
+- a later written explanation from the successful Kilo Code plus Opus 4.6 fix session
+- public Kilo documentation describing the built-in `debug` agent as systematic troubleshooting with full tool access
+
+Those inputs are used only to describe workflow shape and open questions.
+They do not override repository history for code facts.
+Exact hidden instructions, automatic context loading, and the relative contribution of Kilo tooling versus model differences remain unknown unless explicitly published.
+
 ## Evidence And Confidence Model
 
 This document now grades major conclusions by evidence strength.
@@ -455,6 +464,43 @@ It is:
 
 Until that is proven, snapshot confirmation should remain a documented hardening candidate, not an assumed must-merge fix.
 
+## Successful Session Workflow Notes
+
+This section uses the later fix-session explanation as supplemental workflow evidence.
+It matters because the successful one-shot did not merely land on a different theory.
+It followed a stricter evidence path.
+
+### 1. The session read the full control flow before proposing a fix
+
+- `playback_spotify.py` was read as one sequential backend, not as isolated helpers
+- `dispatch()` was treated as the key path: token refresh, device resolution, transfer, play, confirm
+- controller entrypoints were checked so replace mode was not assumed to contain hidden context-clearing logic
+- dead helpers were identified by checking real call sites instead of trusting method names
+
+### 2. Running tests before edits prevented the wrong fix
+
+- the existing tests already failed against the checked-in code before the successful patch
+- that exposed drift around the older album-context path
+- without that step, the session could have "fixed" the code toward stale tests instead of toward the real implementation and runtime behavior
+
+### 3. The rate-limit finding was not accidental
+
+- live validation surfaced real Spotify API throttling behavior
+- the session followed the API responses instead of forcing every symptom into the stale-context story
+- that exposed a second major issue family: token churn and background-call pressure
+- the later `spotify_rate_limited` visibility and `Retry-After` work therefore came from evidence-following, not from random scope creep
+
+### 4. The public Kilo debug description matches the workflow shape, but not the hidden details
+
+- public Kilo docs describe `debug` as a systematic troubleshooting agent with full tool access
+- that description matches the reported workflow shape: read broadly, narrow hypotheses, inspect live behavior, then fix
+- but the repo still does not reveal the exact hidden debug-agent instructions, automatic context retrieval, or how much Opus 4.6 versus tooling differences changed the outcome
+
+### 5. "Kilo fixed it in one shot" is still not proof that model choice alone caused the better diagnosis
+
+- the better outcome may have come from model differences, tool defaults, context gathering, workflow discipline, or some combination
+- that remains an explicit unknown and should not be collapsed into a single explanation
+
 ## Session And Tooling Observations
 
 Everything in this section is an inference from the code history and the stated session setup, not a direct fact from the repo.
@@ -532,7 +578,9 @@ It is also unsurprising that it did not reconstruct the snapshot-confirmation lo
 - the current worktree still does not address the "scan event wasn't logged" symptom from that prompt.
 - the strongest evidence-backed problem is misleading success combined with weak 429 visibility, not a confirmed stale-content root cause.
 - rate limiting is now a first-class competing explanation for the observed glitching behavior, not a side note.
+- the rate-limit discovery should be treated as evidence-led API diagnosis, not as an accidental side quest.
 - snapshot-based confirmation remains a valid hardening idea, but it is not yet justified as required runtime complexity.
+- the exact contribution of Kilo debug-mode behavior and Opus 4.6 remains unknown.
 - The current branch therefore improves API-discipline reliability and may already address much of the real issue, but it does not yet prove that all replace-mode edge cases are clean.
 
 ## Future Session Playbook
@@ -772,4 +820,4 @@ Do not let code land first and leave the specs behind.
 - whether the 2026-04-16 boot incident was a code regression, environment drift, or a stale-doc mismatch
 - whether replace mode on current committed code still has any real stale-content takeover failure
 - why the scan event appeared to be missing from logs during the 2026-04-16 incident
-- how much the Kilo debug-mode startup context influenced branch direction compared with ordinary model variance
+- the exact contribution of Kilo Code's built-in debug agent behavior, automatic context gathering, and Opus 4.6 relative to the earlier Codex GPT-5.4 sessions
