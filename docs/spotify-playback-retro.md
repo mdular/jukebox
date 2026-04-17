@@ -43,6 +43,11 @@ Any interpretation about session behavior, tooling, or model workflow is labeled
 This retro also uses two supplemental workflow inputs outside repo history:
 
 - a later written explanation from the successful Kilo Code plus Opus 4.6 fix session
+- later live-device follow-up results supplied after the original retro draft:
+  - booting into queue mode did not initially reach working scan-to-play state
+  - that queue-mode boot path was later fixed on the `fix-glitch-kilo-opus` line
+  - booting into replace mode worked
+  - replace mode also cleared prior context songs, including an album previously started from the phone
 - public Kilo documentation describing the built-in `debug` agent as systematic troubleshooting with full tool access
 
 Those inputs are used only to describe workflow shape and open questions.
@@ -219,6 +224,20 @@ Effect:
 - does not restore the branch-only probe tooling from `playback-fix-codex`
 - does not touch `src/jukebox/core/controller.py`, `src/jukebox/logging.py`, or `src/jukebox/main.py`, so the "scan event wasn't logged" part of the prompt remains unaddressed
 
+### Later follow-up live-device testing outside preserved repo history
+
+Later manual testing added two important runtime datapoints:
+
+- booting into queue mode still did not reach working scan-to-play state until later `fix-glitch-kilo-opus` changes fixed that path
+- booting into replace mode did reach working scan-to-play state
+- replace mode also successfully wiped previous context songs, including a previously phone-started album
+
+Effect:
+
+- narrows the still-interesting boot failure to queue mode rather than replace mode
+- provides real-device support that the current replace-mode path can clear stale prior context in practice
+- further lowers the urgency of snapshot confirmation as a blanket replace-mode requirement
+
 ## Implementation Comparison
 
 ### `dispatch()` strategy
@@ -245,6 +264,7 @@ Effect:
 | `playback-fix-codex` | no preserved startup-probe change | boot behavior stays on the `main` contract |
 | `fix-glitch-kilo-opus` at `03a26e6` | auth plus one device-resolution pass to seed passive cache | improves initial status accuracy, but still gives up immediately on `device_not_listed` |
 | current worktree on `fix-glitch-kilo-opus` | auth plus bounded retry window for `device_not_listed` during `probe()` | directly targets post-boot receiver propagation delay without reintroducing idle polling |
+| later live-device follow-up | queue-mode boot needed the later `fix-glitch-kilo-opus` changes to reach working scan-to-play; replace-mode boot was reported working | suggests the remaining boot-autonomy gap was mode-specific rather than a blanket startup failure |
 
 ### Playback confirmation heuristic
 
@@ -363,6 +383,7 @@ Result:
 Given later real-device testing with current committed changes, the burden of proof is now on the snapshot-guardrail side:
 
 - the branch already appears to have improved real behavior
+- later follow-up testing reports replace-mode boot and context clearing working on the device
 - extra confirmation complexity now needs reproduction-based justification
 - the snapshot safeguard should be treated as optional hardening until a current-branch replace-mode failure actually demonstrates the need
 
@@ -413,6 +434,7 @@ This section replaces any overly certain single-root-cause reading.
 - `main` created a high-idle-call architecture that could trigger Spotify rate limiting. Confidence: `A`
 - permissive confirmation could report success too early while Spotify state was still misleading or stale. Confidence: `A`
 - `fix-glitch-kilo-opus` materially improves API discipline and 429 visibility. Confidence: `A`
+- later live-device follow-up indicates replace mode can boot into working scan-to-play and clear prior phone-started album context on the device. Confidence: `B`
 
 ### Leading current working theory
 
@@ -448,9 +470,9 @@ However:
 
 - that path is not yet confirmed as the main reason for the real-world glitch
 - the branch that implemented the safeguard also added unrelated runtime complexity
-- recent anecdotal testing with current committed code suggests the problem may already be materially improved without that guardrail
+- recent live-device testing reports replace mode behaving correctly and clearing prior context without that guardrail
 
-Confidence that snapshot guardrails are required right now: `C`
+Confidence that snapshot guardrails are required right now: `D`
 
 ### Open question to keep explicit
 
@@ -460,7 +482,7 @@ The unresolved question is not:
 
 It is:
 
-- "does current committed replace-mode behavior still fail in a way that snapshot confirmation demonstrably prevents?"
+- "after the latest successful replace-mode tests, is there still any current-line replace-mode failure that snapshot confirmation demonstrably prevents?"
 
 Until that is proven, snapshot confirmation should remain a documented hardening candidate, not an assumed must-merge fix.
 
@@ -579,9 +601,10 @@ It is also unsurprising that it did not reconstruct the snapshot-confirmation lo
 - the strongest evidence-backed problem is misleading success combined with weak 429 visibility, not a confirmed stale-content root cause.
 - rate limiting is now a first-class competing explanation for the observed glitching behavior, not a side note.
 - the rate-limit discovery should be treated as evidence-led API diagnosis, not as an accidental side quest.
-- snapshot-based confirmation remains a valid hardening idea, but it is not yet justified as required runtime complexity.
+- later live-device follow-up narrows the unresolved playback question: replace mode appears to work and clear prior context, while queue-mode boot was the path that still needed the later `fix-glitch-kilo-opus` fix.
+- snapshot-based confirmation remains a valid hardening idea, but it is not yet justified as required runtime complexity, especially for replace mode.
 - the exact contribution of Kilo debug-mode behavior and Opus 4.6 remains unknown.
-- The current branch therefore improves API-discipline reliability and may already address much of the real issue, but it does not yet prove that all replace-mode edge cases are clean.
+- the current branch therefore improves API-discipline reliability and appears stronger on replace mode than queue-mode boot history alone suggested.
 
 ## Future Session Playbook
 
@@ -740,7 +763,7 @@ Acceptance criteria:
 
 ### Phase 2: Validate replace mode before adding more runtime complexity
 
-Before merging snapshot confirmation, run targeted validation on current committed code plus low-risk observability fixes:
+Before merging snapshot confirmation, treat replace mode as having one positive live-device datapoint and focus new validation on confirming that result holds while queue mode stays fixed:
 
 - let at least one replace-mode track run through or run enough sequential replace scans to expose the old symptom
 - test paused old album context on another client, then scan on jukebox
@@ -750,7 +773,7 @@ Before merging snapshot confirmation, run targeted validation on current committ
 
 Acceptance criteria:
 
-- if replace mode behaves correctly, do not merge snapshot guardrails
+- if replace mode continues to behave correctly and clear prior context, do not merge snapshot guardrails
 - if replace mode still shows client-state divergence or success without reliable takeover, revisit snapshot confirmation as targeted hardening
 - if snapshot confirmation is revived, it must be justified by a current-branch reproduction, not only by historical suspicion
 
@@ -818,6 +841,6 @@ Do not let code land first and leave the specs behind.
 - whether the stale-context glitch was fully reproduced on every environment or only on selected Pi and Spotify-session states
 - whether the current branch's direct-play-first approach is sufficient on its own in all real `spotifyd` cases without any additional confirmation guardrails
 - whether the 2026-04-16 boot incident was a code regression, environment drift, or a stale-doc mismatch
-- whether replace mode on current committed code still has any real stale-content takeover failure
+- whether replace mode on current committed code has any remaining stale-content takeover failure beyond the now-reported successful boot and context-clearing cases
 - why the scan event appeared to be missing from logs during the 2026-04-16 incident
 - the exact contribution of Kilo Code's built-in debug agent behavior, automatic context gathering, and Opus 4.6 relative to the earlier Codex GPT-5.4 sessions
