@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spec"
+  short_description: "Draft EPIC technical specs"
+  default_prompt: "Use $spec to draft or revise an EPIC technical design from the checked requirements decisions."

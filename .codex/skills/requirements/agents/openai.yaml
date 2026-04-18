@@ -1,0 +1,4 @@
+interface:
+  display_name: "Requirements"
+  short_description: "Draft EPIC requirements specs"
+  default_prompt: "Use $requirements to draft or revise an EPIC requirements document with decision checklists and acceptance criteria."
