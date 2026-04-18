@@ -9,6 +9,7 @@ The repository supports both the local `stdin` development loop and the Raspberr
 - Product and implementation specs live under [`spec/`](/Users/markus/Workspace/jukebox/spec).
 - [`spec/concept.md`](/Users/markus/Workspace/jukebox/spec/concept.md) is the source of truth for product direction.
 - [`spec/examples.md`](/Users/markus/Workspace/jukebox/spec/examples.md) contains example QR payloads and the Spotify auth usage flow.
+- Repo-local Codex skills live under [`.codex/skills/`](/Users/markus/Workspace/jukebox/.codex/skills).
 - Pi bring-up and operations live under [`docs/`](/Users/markus/Workspace/jukebox/docs):
   - [`docs/pi-build.md`](/Users/markus/Workspace/jukebox/docs/pi-build.md)
   - [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md)
@@ -20,6 +21,7 @@ The repository supports both the local `stdin` development loop and the Raspberr
 ```text
 docs/           Raspberry Pi build, setup, deploy, and validation guides
 spec/           Project specifications
+.codex/skills/  Repo-local Codex skills
 src/jukebox/    Application package
 tests/          Automated tests
 scripts/        Local and Pi deployment helpers

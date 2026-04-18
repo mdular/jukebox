@@ -35,7 +35,8 @@ Branch-only artifacts are called out explicitly when they matter:
 - `playback-fix-codex` added `docs/spotify-connect-debug.md`
 - `playback-fix-codex` added `scripts/spotify_connect_probe.py`
 
-Those files do not exist on the current branch at the time of this retro, so they are referenced by branch name and commit rather than as live workspace files.
+Those files do not exist on the active `main` branch at the time of this retro revision, so they are referenced by branch name and commit rather than as live workspace files.
+The active workspace is back on `main`; later fixes discussed below are called out explicitly as `fix-glitch-kilo-opus` branch history until they are merged.
 
 Anything not preserved in commit history is treated as unknown.
 Any interpretation about session behavior, tooling, or model workflow is labeled as an inference.
@@ -48,6 +49,7 @@ This retro also uses two supplemental workflow inputs outside repo history:
   - that queue-mode boot path was later fixed on the `fix-glitch-kilo-opus` line
   - booting into replace mode worked
   - replace mode also cleared prior context songs, including an album previously started from the phone
+  - on 2026-04-18, with a desktop client already playing album context and the jukebox in queue mode, the first physical track-card scan started fresh playback on the device and later scans were added to the queue
 - public Kilo documentation describing the built-in `debug` agent as systematic troubleshooting with full tool access
 
 Those inputs are used only to describe workflow shape and open questions.
@@ -195,9 +197,9 @@ Effect:
 - continues the same rate-limit visibility track
 - does not change the stale-context confirmation model
 
-### 2026-04-16 to 2026-04-17 current worktree on `fix-glitch-kilo-opus`
+### 2026-04-16 to 2026-04-17 branch-local worktree on `fix-glitch-kilo-opus`
 
-The current uncommitted worktree came from a live-device prompt against `jukebox.local` after a boot on 2026-04-16.
+This later branch-local worktree came from a live-device prompt against `jukebox.local` after a boot on 2026-04-16.
 The reported symptoms were:
 
 - boot did not reach working mode on its own
@@ -206,7 +208,7 @@ The reported symptoms were:
 - the device should have reached `ready` autonomously after boot
 - the scan event did not appear to be logged
 
-The worktree currently adds:
+That worktree added:
 
 - bounded boot-time device retries inside `SpotifyPlaybackBackend.probe()`
 - two new settings wired through `src/jukebox/config.py` and `src/jukebox/runtime.py`:
@@ -224,18 +226,55 @@ Effect:
 - does not restore the branch-only probe tooling from `playback-fix-codex`
 - does not touch `src/jukebox/core/controller.py`, `src/jukebox/logging.py`, or `src/jukebox/main.py`, so the "scan event wasn't logged" part of the prompt remains unaddressed
 
-### Later follow-up live-device testing outside preserved repo history
+### 2026-04-18 `fc5d561` on `fix-glitch-kilo-opus`
 
-Later manual testing added two important runtime datapoints:
+Changed the queue-mode controller branch from:
+
+- queue fallback only when `player_active() is False`
+
+to:
+
+- queue fallback whenever `player_active() is not True`
+
+Also added a regression test for unknown player state.
+
+Effect:
+
+- fixes one queue-mode bug where an unknown cached player state could still be treated as active
+- keeps queue mode aligned with the EPIC 4 contract that an idle or unknown target should start playback instead of silently enqueueing
+- still relies on passive cached `player_active()` for the queue decision
+
+### 2026-04-18 `6e6a893` on `fix-glitch-kilo-opus`
+
+Added:
+
+- `PlaybackBackend.current_player_active()`
+- a scan-scoped Spotify `/v1/me/player` read for current target activity in `SpotifyPlaybackBackend`
+- controller queue-mode routing that uses `current_player_active()` instead of passive cached `player_active()`
+- regression tests covering stale cached activity versus current playback state on another device
+- an explicit note in `docs/api-discipline.md` that this scan-scoped API call is allowed because it is part of a user action rather than a background poll
+
+Effect:
+
+- fixes the queue-mode case where the target had gone idle or another client was active but the passive cache still looked active
+- preserves zero background API calls for health, idle, and status paths
+- narrows the remaining queue-mode question from "does the scan do anything?" to "does the scan-time current-player-state read correctly reflect the target device?"
+
+### 2026-04-18 live-device validation on `fix-glitch-kilo-opus`
+
+Later manual testing added these runtime datapoints:
 
 - booting into queue mode still did not reach working scan-to-play state until later `fix-glitch-kilo-opus` changes fixed that path
 - booting into replace mode did reach working scan-to-play state
 - replace mode also successfully wiped previous context songs, including a previously phone-started album
+- with a desktop client already holding album context and the jukebox set to queue mode, the first physical track-card scan started fresh playback on the device
+- additional physical track-card scans were added to the queue on the device
 
 Effect:
 
-- narrows the still-interesting boot failure to queue mode rather than replace mode
+- ties the queue-mode failure to stale target-activity detection rather than to a blanket failure of direct-play-first handoff
 - provides real-device support that the current replace-mode path can clear stale prior context in practice
+- provides real-device support that the later queue-mode fix can take over cleanly and then queue subsequent scans
 - further lowers the urgency of snapshot confirmation as a blanket replace-mode requirement
 
 ## Implementation Comparison
@@ -256,6 +295,14 @@ Effect:
 | `playback-fix-codex` | still live Spotify calls | handoff logic improved, but background polling problem remained |
 | `fix-glitch-kilo-opus` | passive cached values | restores zero background API calls for status and idle decisions |
 
+### Queue-mode activity source
+
+| Line | Queue-mode track decision | Consequence |
+|---|---|---|
+| `main` | uses passive `player_active()` cache | can enqueue when the target has already gone idle or another client is active |
+| `fix-glitch-kilo-opus` at `fc5d561` | still uses passive `player_active()`, but unknown state falls back to dispatch | fixes the `None` case only |
+| `fix-glitch-kilo-opus` at `6e6a893` | uses scan-scoped `current_player_active()` while background paths keep passive cache | fixes stale-active queue-mode behavior without reintroducing idle polling |
+
 ### Startup probe behavior
 
 | Line | Startup probe behavior | Consequence |
@@ -263,8 +310,8 @@ Effect:
 | `main` | auth-only probe, no device wait | avoids restart loops, but can enter runtime before the receiver is visible |
 | `playback-fix-codex` | no preserved startup-probe change | boot behavior stays on the `main` contract |
 | `fix-glitch-kilo-opus` at `03a26e6` | auth plus one device-resolution pass to seed passive cache | improves initial status accuracy, but still gives up immediately on `device_not_listed` |
-| current worktree on `fix-glitch-kilo-opus` | auth plus bounded retry window for `device_not_listed` during `probe()` | directly targets post-boot receiver propagation delay without reintroducing idle polling |
-| later live-device follow-up | queue-mode boot needed the later `fix-glitch-kilo-opus` changes to reach working scan-to-play; replace-mode boot was reported working | suggests the remaining boot-autonomy gap was mode-specific rather than a blanket startup failure |
+| later branch-local work on `fix-glitch-kilo-opus` | auth plus bounded retry window for `device_not_listed` during `probe()` | directly targets post-boot receiver propagation delay without reintroducing idle polling |
+| later `fix-glitch-kilo-opus` commits and live validation | bounded startup retry plus later queue-mode state fixes yielded working replace and queue behavior in reported tests | suggests the remaining boot-autonomy gap was mode-specific and later corrected on the branch |
 
 ### Playback confirmation heuristic
 
@@ -288,7 +335,8 @@ Effect:
 |---|---|---|
 | `main` | no `PlaybackRequest.stop_after_track` | simpler adapter contract |
 | `playback-fix-codex` | adds `PlaybackRequest.stop_after_track` | makes controller intent explicit but introduces branch-only behavior not carried forward |
-| `fix-glitch-kilo-opus` | no `PlaybackRequest.stop_after_track` | current branch does not retain the stop-after-track design |
+| `fix-glitch-kilo-opus` at `03a26e6` | no `PlaybackRequest.stop_after_track` | keeps the simpler adapter contract |
+| later `fix-glitch-kilo-opus` work | adds `PlaybackBackend.current_player_active()` for scan-time queue decisions | slightly widens the playback interface while keeping background status passive |
 
 ### Rate-limit visibility
 
@@ -297,7 +345,7 @@ Effect:
 | `main` | no dedicated passive-status discipline | rate-limit pressure can be created by background polling |
 | `playback-fix-codex` | no preserved rate-limit visibility improvement | handoff branch does not materially improve operator visibility into 429s |
 | `fix-glitch-kilo-opus` at `03a26e6` | explicit `spotify_rate_limited` status and warning-level logging | makes 429 state visible and compatible with passive health |
-| current worktree on `fix-glitch-kilo-opus` | explicit `Retry-After` rendering when Spotify provides it | improves operator guidance during throttling without changing control flow |
+| later branch-local work on `fix-glitch-kilo-opus` | explicit `Retry-After` rendering when Spotify provides it | improves operator guidance during throttling without changing control flow |
 
 ## What Went Wrong
 
@@ -362,7 +410,7 @@ It also widened scope with:
 That made the branch harder to adopt piecemeal.
 The most valuable handoff safeguards were bundled with extra behavior that was not required to prove the original glitch fix.
 
-### 5. The current branch fixed the strongest proven regression
+### 5. The `fix-glitch-kilo-opus` line fixed the strongest proven regression
 
 `fix-glitch-kilo-opus` clearly fixes a real problem from `main`:
 
@@ -380,12 +428,12 @@ Result:
 - the branch is stronger on API discipline
 - the branch is weaker on proving that stale-content false positives are gone
 
-Given later real-device testing with current committed changes, the burden of proof is now on the snapshot-guardrail side:
+Given later real-device testing with the later committed `fix-glitch-kilo-opus` changes, the burden of proof is now on the snapshot-guardrail side:
 
 - the branch already appears to have improved real behavior
 - later follow-up testing reports replace-mode boot and context clearing working on the device
 - extra confirmation complexity now needs reproduction-based justification
-- the snapshot safeguard should be treated as optional hardening until a current-branch replace-mode failure actually demonstrates the need
+- the snapshot safeguard should be treated as optional hardening until a merge-target replace-mode failure actually demonstrates the need
 
 ### 6. The diagnostic tooling was not carried forward
 
@@ -394,12 +442,12 @@ Given later real-device testing with current committed changes, the burden of pr
 - `docs/spotify-connect-debug.md`
 - `scripts/spotify_connect_probe.py`
 
-Those are absent on the current branch.
+Those are absent on `main` at the time of this retro revision.
 That matters because later sessions then have to reason from code and symptoms again instead of starting from a preserved reproduction harness.
 
 ### 7. The latest prompt was a real boot incident, not the original stale-context reproduction
 
-The 2026-04-16 prompt that drove the current worktree was about boot autonomy:
+The 2026-04-16 prompt that drove the later branch-local `fix-glitch-kilo-opus` work was about boot autonomy:
 
 - the receiver stayed `device_not_listed`
 - manual phone activation was needed
@@ -422,7 +470,7 @@ That leaves three plausible explanations:
 - environment drift on the Pi or Spotify side
 - stale validation docs that no longer describe the live appliance accurately
 
-The current worktree implicitly treated the problem as a boot-time receiver-visibility delay and added bounded startup retries.
+That branch-local work implicitly treated the problem as a boot-time receiver-visibility delay and added bounded startup retries.
 That is a sensible mitigation, but it does not by itself resolve the deeper documentation-versus-reality conflict.
 
 ## Competing Explanations And Confidence
@@ -435,6 +483,7 @@ This section replaces any overly certain single-root-cause reading.
 - permissive confirmation could report success too early while Spotify state was still misleading or stale. Confidence: `A`
 - `fix-glitch-kilo-opus` materially improves API discipline and 429 visibility. Confidence: `A`
 - later live-device follow-up indicates replace mode can boot into working scan-to-play and clear prior phone-started album context on the device. Confidence: `B`
+- later `fix-glitch-kilo-opus` commits `fc5d561` and `6e6a893`, plus 2026-04-18 physical validation, show that queue mode can start fresh playback on the jukebox and then queue later scans correctly even when another client previously held album context. Confidence: `B`
 
 ### Leading current working theory
 
@@ -482,7 +531,7 @@ The unresolved question is not:
 
 It is:
 
-- "after the latest successful replace-mode tests, is there still any current-line replace-mode failure that snapshot confirmation demonstrably prevents?"
+- "after the latest successful replace-mode tests, is there still any merge-target replace-mode failure that snapshot confirmation demonstrably prevents?"
 
 Until that is proven, snapshot confirmation should remain a documented hardening candidate, not an assumed must-merge fix.
 
@@ -546,7 +595,7 @@ That difference alone is enough to send two frontier models in different directi
 
 ### Inference: missing carry-forward context mattered more than raw model quality
 
-The current branch appears to have started with `AGENTS.md` and `README.md` only, plus the live workspace.
+The later `fix-glitch-kilo-opus` session appears to have started with `AGENTS.md` and `README.md` only, plus the live workspace.
 That gives strong guidance about:
 
 - specs
@@ -582,7 +631,7 @@ Unlike the older handoff-focused work, the 2026-04-16 prompt began with:
 - manual phone activation requirement
 - apparent missing scan logging
 
-Given that opening, it is unsurprising that the current worktree concentrated on:
+Given that opening, it is unsurprising that the branch-local work concentrated on:
 
 - boot-time device visibility retries
 - startup probe configuration
@@ -596,15 +645,16 @@ It is also unsurprising that it did not reconstruct the snapshot-confirmation lo
 - `playback-fix-codex` also widened scope with stop-after-track behavior and a background worker, which made selective adoption harder.
 - `fix-glitch-kilo-opus` fixes a real `main` regression by removing background Spotify polling and token churn.
 - `fix-glitch-kilo-opus` keeps the direct-play-first improvement but drops the snapshot safeguard and the probe tooling.
-- the current worktree adds a bounded startup retry window that directly targets the 2026-04-16 boot-autonomy incident.
-- the current worktree still does not address the "scan event wasn't logged" symptom from that prompt.
+- later branch-local `fix-glitch-kilo-opus` work adds a bounded startup retry window that directly targets the 2026-04-16 boot-autonomy incident.
+- that startup-retry work still does not address the "scan event wasn't logged" symptom from that prompt.
+- later `fix-glitch-kilo-opus` commits `fc5d561` and `6e6a893` fix queue-mode stale target-activity detection without reintroducing background polling.
 - the strongest evidence-backed problem is misleading success combined with weak 429 visibility, not a confirmed stale-content root cause.
 - rate limiting is now a first-class competing explanation for the observed glitching behavior, not a side note.
 - the rate-limit discovery should be treated as evidence-led API diagnosis, not as an accidental side quest.
-- later live-device follow-up narrows the unresolved playback question: replace mode appears to work and clear prior context, while queue-mode boot was the path that still needed the later `fix-glitch-kilo-opus` fix.
+- 2026-04-18 physical validation on `fix-glitch-kilo-opus` reported the previously failing queue-mode scenario working: desktop album context elsewhere, first scan starts fresh playback on the device, later scans queue.
 - snapshot-based confirmation remains a valid hardening idea, but it is not yet justified as required runtime complexity, especially for replace mode.
 - the exact contribution of Kilo debug-mode behavior and Opus 4.6 remains unknown.
-- the current branch therefore improves API-discipline reliability and appears stronger on replace mode than queue-mode boot history alone suggested.
+- the `fix-glitch-kilo-opus` line therefore looks stronger on both replace mode and queue mode in the validated scenarios, but the active workspace is back on `main`, so those later fixes should still be treated as branch-local until merged.
 
 ## Future Session Playbook
 
@@ -662,7 +712,7 @@ Before merging a harder fix, state the exact assumption it depends on and how to
 Examples:
 
 - assumption: current replace mode still has a stale-content false-positive bug
-- test: reproduce replace-mode failure on current committed code and show snapshot confirmation prevents it
+- test: reproduce replace-mode failure on the merge-target code and show snapshot confirmation prevents it
 
 - assumption: rate limiting is a major contributor
 - test: capture logs during a glitch and confirm `spotify_rate_limited` or clear API-pressure symptoms
@@ -706,7 +756,7 @@ If a prompt touches Spotify handoff, receiver visibility, or stale playback meta
 - this retro
 - `playback-fix-codex` diffs for `src/jukebox/adapters/playback_spotify.py`
 - the old probe script and runbook when available
-- the current `docs/api-discipline.md`
+- the latest `docs/api-discipline.md` from `fix-glitch-kilo-opus` when it is not yet on `main`
 
 Do not start from `README.md` and `AGENTS.md` alone for this subsystem again.
 
@@ -717,24 +767,26 @@ The immediate merge target should stay conservative.
 Carry forward now:
 
 1. keep the passive-status and token-caching work from `fix-glitch-kilo-opus`
-2. keep the current worktree's bounded startup retry window for `device_not_listed`
-3. keep the current worktree's `Retry-After` visibility improvement for 429s
-4. restore the probe script and runbook from `playback-fix-codex`
+2. keep the later branch-local `fix-glitch-kilo-opus` bounded startup retry window for `device_not_listed`
+3. keep the later branch-local `fix-glitch-kilo-opus` `Retry-After` visibility improvement for 429s
+4. keep the later branch-local `fix-glitch-kilo-opus` queue-mode target-activity fix from `fc5d561` and `6e6a893`
+5. restore the probe script and runbook from `playback-fix-codex`
 
 Defer unless validation proves the need:
 
-5. snapshot-delta confirmation safeguard
+6. snapshot-delta confirmation safeguard
 
 Do not carry forward without separate product justification:
 
-6. `PlaybackRequest.stop_after_track`
-7. background stop-monitor thread
-8. controller behavior changes tied only to stop-after-track
+7. `PlaybackRequest.stop_after_track`
+8. background stop-monitor thread
+9. controller behavior changes tied only to stop-after-track
 
 That produces a narrower merged target with lower complexity:
 
 - direct-play-first handoff behavior
 - bounded boot-time receiver visibility recovery
+- accurate queue-mode target-activity checks
 - zero background Spotify polling
 - clearer rate-limit operator feedback
 - preserved reproduction tooling
@@ -745,10 +797,11 @@ This is the recommended merge plan after user review of the retro findings.
 
 ### Phase 1: Land the low-risk runtime and observability fixes
 
-Carry forward from `fix-glitch-kilo-opus` and the current worktree:
+Carry forward from `fix-glitch-kilo-opus`:
 
 - passive cached `status()`
 - passive cached `player_active()`
+- scan-scoped `current_player_active()` for queue-mode track decisions
 - token caching
 - explicit `spotify_rate_limited` status and warning logging
 - `Retry-After` message rendering for 429s
@@ -760,10 +813,12 @@ Acceptance criteria:
 - bounded startup probe cost
 - boot reaches `ready` autonomously when receiver visibility appears within the configured retry window
 - boot degrades cleanly to `receiver_unavailable` when the retry window expires
+- queue mode starts playback when the target device is idle even if another client is active
+- queue mode only enqueues once the target device is already playing
 
 ### Phase 2: Validate replace mode before adding more runtime complexity
 
-Before merging snapshot confirmation, treat replace mode as having one positive live-device datapoint and focus new validation on confirming that result holds while queue mode stays fixed:
+Before merging snapshot confirmation, treat replace mode as having one positive live-device datapoint and queue mode as having one positive branch-local validation datapoint from 2026-04-18. Focus new validation on confirming that both results hold across repeated runs:
 
 - let at least one replace-mode track run through or run enough sequential replace scans to expose the old symptom
 - test paused old album context on another client, then scan on jukebox
@@ -775,7 +830,7 @@ Acceptance criteria:
 
 - if replace mode continues to behave correctly and clear prior context, do not merge snapshot guardrails
 - if replace mode still shows client-state divergence or success without reliable takeover, revisit snapshot confirmation as targeted hardening
-- if snapshot confirmation is revived, it must be justified by a current-branch reproduction, not only by historical suspicion
+- if snapshot confirmation is revived, it must be justified by a merge-target reproduction, not only by historical suspicion
 
 ### Phase 3: Restore diagnostic tooling and only then reconsider deferred hardening
 
@@ -839,8 +894,8 @@ Do not let code land first and leave the specs behind.
 
 - abandoned or omitted branch-local experiments that never reached a commit
 - whether the stale-context glitch was fully reproduced on every environment or only on selected Pi and Spotify-session states
-- whether the current branch's direct-play-first approach is sufficient on its own in all real `spotifyd` cases without any additional confirmation guardrails
+- whether the later `fix-glitch-kilo-opus` line's direct-play-first plus queue-mode activity fix is sufficient on its own in all real `spotifyd` cases without any additional confirmation guardrails
 - whether the 2026-04-16 boot incident was a code regression, environment drift, or a stale-doc mismatch
-- whether replace mode on current committed code has any remaining stale-content takeover failure beyond the now-reported successful boot and context-clearing cases
+- whether replace mode on the later `fix-glitch-kilo-opus` line has any remaining stale-content takeover failure beyond the now-reported successful boot and context-clearing cases
 - why the scan event appeared to be missing from logs during the 2026-04-16 incident
 - the exact contribution of Kilo Code's built-in debug agent behavior, automatic context gathering, and Opus 4.6 relative to the earlier Codex GPT-5.4 sessions
