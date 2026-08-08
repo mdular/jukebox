@@ -10,7 +10,7 @@ from typing import Literal
 from .core.cards import DEFAULT_ENABLED_ACTION_IDS, PlaybackMode
 
 WifiMode = Literal["client", "setup_ap"]
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class OperatorState:
     playback_mode: PlaybackMode = "replace"
     setup_requested: bool = False
     receiver_reauth_requested: bool = False
+    receiver_reauth_started: bool = False
     last_wifi_mode: WifiMode | None = None
     enabled_actions: frozenset[str] = DEFAULT_ENABLED_ACTION_IDS
     schema_version: int = _SCHEMA_VERSION
@@ -60,6 +61,7 @@ class OperatorStateStore:
             playback_mode=playback_mode,
             setup_requested=current.setup_requested,
             receiver_reauth_requested=current.receiver_reauth_requested,
+            receiver_reauth_started=current.receiver_reauth_started,
             last_wifi_mode=current.last_wifi_mode,
             enabled_actions=current.enabled_actions,
         )
@@ -72,6 +74,7 @@ class OperatorStateStore:
             playback_mode=current.playback_mode,
             setup_requested=requested,
             receiver_reauth_requested=current.receiver_reauth_requested,
+            receiver_reauth_started=current.receiver_reauth_started,
             last_wifi_mode=wifi_mode,
             enabled_actions=current.enabled_actions,
         )
@@ -80,10 +83,29 @@ class OperatorStateStore:
 
     def mark_receiver_reauth_requested(self, requested: bool) -> OperatorState:
         current = self.load()
+        receiver_reauth_started = (
+            current.receiver_reauth_started
+            if requested and current.receiver_reauth_requested
+            else False
+        )
         updated = OperatorState(
             playback_mode=current.playback_mode,
             setup_requested=current.setup_requested,
             receiver_reauth_requested=requested,
+            receiver_reauth_started=receiver_reauth_started,
+            last_wifi_mode=current.last_wifi_mode,
+            enabled_actions=current.enabled_actions,
+        )
+        self.save(updated)
+        return updated
+
+    def mark_receiver_reauth_started(self) -> OperatorState:
+        current = self.load()
+        updated = OperatorState(
+            playback_mode=current.playback_mode,
+            setup_requested=current.setup_requested,
+            receiver_reauth_requested=True,
+            receiver_reauth_started=True,
             last_wifi_mode=current.last_wifi_mode,
             enabled_actions=current.enabled_actions,
         )
@@ -120,6 +142,7 @@ class OperatorStateStore:
             playback_mode=playback_mode,
             setup_requested=bool(payload.get("setup_requested", False)),
             receiver_reauth_requested=bool(payload.get("receiver_reauth_requested", False)),
+            receiver_reauth_started=bool(payload.get("receiver_reauth_started", False)),
             last_wifi_mode=last_wifi_mode,
             enabled_actions=enabled_actions,
             schema_version=_SCHEMA_VERSION,

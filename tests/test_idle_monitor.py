@@ -14,7 +14,7 @@ class IdleMonitorTests(unittest.TestCase):
         clock = _FakeClock([0.0, 0.0, 10.0])
         monitor = IdleMonitor(
             idle_shutdown_seconds=5.0,
-            player_active=lambda: False,
+            current_player_active=lambda: False,
             shutdown_callback=lambda reason: requested.append(reason),
             clock=clock,
         )
@@ -27,23 +27,68 @@ class IdleMonitorTests(unittest.TestCase):
         self.assertEqual(event.code, "auto_shutdown_requested")
         self.assertEqual(requested, ["idle"])
 
-    def test_poll_once_does_not_shutdown_while_playback_is_active(self) -> None:
+    def test_active_playback_rearms_a_full_idle_interval(self) -> None:
+        player_states = iter([True, False])
+        requested: list[str] = []
         monitor = IdleMonitor(
             idle_shutdown_seconds=5.0,
-            player_active=lambda: True,
-            shutdown_callback=lambda reason: None,
-            clock=_FakeClock([0.0, 0.0, 10.0]),
+            current_player_active=lambda: next(player_states),
+            shutdown_callback=lambda reason: requested.append(reason),
+            clock=_FakeClock([0.0, 0.0, 10.0, 11.0, 15.0]),
         )
 
         monitor.handle(ControllerEvent(code="playback_dispatch_succeeded", message="played"))
 
         self.assertIsNone(monitor.poll_once())
+        self.assertIsNone(monitor.poll_once())
+        event = monitor.poll_once()
+
+        self.assertIsNotNone(event)
+        self.assertEqual(requested, ["idle"])
+
+    def test_poll_once_does_not_check_player_before_idle_deadline(self) -> None:
+        player_checks: list[str] = []
+
+        def current_player_active() -> bool:
+            player_checks.append("checked")
+            return False
+
+        monitor = IdleMonitor(
+            idle_shutdown_seconds=5.0,
+            current_player_active=current_player_active,
+            shutdown_callback=lambda reason: None,
+            clock=_FakeClock([0.0, 0.0, 4.0]),
+        )
+
+        monitor.handle(ControllerEvent(code="playback_dispatch_succeeded", message="played"))
+
+        self.assertIsNone(monitor.poll_once())
+        self.assertEqual(player_checks, [])
+
+    def test_unknown_playback_rearms_a_full_idle_interval(self) -> None:
+        player_states = iter([None, False])
+        requested: list[str] = []
+        monitor = IdleMonitor(
+            idle_shutdown_seconds=5.0,
+            current_player_active=lambda: next(player_states),
+            shutdown_callback=lambda reason: requested.append(reason),
+            clock=_FakeClock([0.0, 0.0, 10.0, 11.0, 15.0]),
+        )
+
+        monitor.handle(ControllerEvent(code="playback_dispatch_succeeded", message="played"))
+
+        self.assertIsNone(monitor.poll_once())
+        self.assertIsNone(monitor.poll_once())
+        event = monitor.poll_once()
+
+        self.assertIsNotNone(event)
+        self.assertEqual(requested, ["idle"])
 
     def test_poll_once_does_not_shutdown_while_setup_mode_is_active(self) -> None:
         requested: list[str] = []
         monitor = IdleMonitor(
             idle_shutdown_seconds=5.0,
-            player_active=lambda: False,
+            current_player_active=lambda: False,
             shutdown_callback=lambda reason: requested.append(reason),
             clock=_FakeClock([0.0, 0.0, 10.0]),
         )

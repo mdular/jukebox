@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
 
@@ -83,10 +84,45 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
         shutdown_helper_command=settings.shutdown_helper_command,
     )
 
-    def auth_status() -> dict[str, object]:
-        payload = system_helpers.auth_status()
-        if payload.get("state") == "succeeded":
+    def call_auth_helper(
+        operation: str,
+        callback: Callable[[], dict[str, object]],
+    ) -> dict[str, object]:
+        try:
+            return callback()
+        except RuntimeError as exc:
+            return {
+                "state": "failed",
+                "message": f"receiver auth helper {operation} failed: {exc}",
+            }
+
+    def reconcile_auth_status(payload: dict[str, object]) -> None:
+        state = payload.get("state")
+        current = operator_state.load()
+        if (
+            state in {"pending", "running"}
+            and current.receiver_reauth_requested
+            and not current.receiver_reauth_started
+        ):
+            current = operator_state.mark_receiver_reauth_started()
+        if (
+            state == "succeeded"
+            and current.receiver_reauth_requested
+            and current.receiver_reauth_started
+        ):
             operator_state.mark_receiver_reauth_requested(False)
+
+    def auth_status() -> dict[str, object]:
+        payload = call_auth_helper("status", system_helpers.auth_status)
+        reconcile_auth_status(payload)
+        return payload
+
+    def start_auth() -> dict[str, object]:
+        operator_state.mark_receiver_reauth_requested(True)
+        payload = call_auth_helper("start", system_helpers.start_auth)
+        if payload.get("state") in {"pending", "running", "succeeded"}:
+            operator_state.mark_receiver_reauth_started()
+            reconcile_auth_status(payload)
         return payload
 
     setup_mode = SetupModeManager(
@@ -94,10 +130,9 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
         wifi_helper=system_helpers,
         fallback_grace_seconds=settings.setup_fallback_grace_seconds,
     )
-    auth_status()
-
     def setup_status() -> DependencyStatus:
-        auth_status()
+        if operator_state.load().receiver_reauth_requested:
+            auth_status()
         return setup_mode.status()
 
     try:
@@ -116,7 +151,7 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
     )
     idle_monitor = IdleMonitor(
         idle_shutdown_seconds=settings.idle_shutdown_seconds,
-        player_active=playback_backend.player_active,
+        current_player_active=playback_backend.current_player_active,
         shutdown_callback=lambda reason: system_helpers.request_shutdown(reason=reason),
     )
     operator_server = OperatorHttpServer(
@@ -133,7 +168,7 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
         ),
         submit_wifi=system_helpers.apply_wifi,
         auth_status=auth_status,
-        start_auth=system_helpers.start_auth,
+        start_auth=start_auth,
     )
     health_monitor = RuntimeHealthMonitor(
         scanner_status=input_status_source.status,

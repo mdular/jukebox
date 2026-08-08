@@ -77,17 +77,23 @@ class CommandSystemHelpers:
         return True, message or "ok"
 
     def _run_json(self, *command: str) -> dict[str, Any]:
-        completed = subprocess.run(
-            list(command),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            completed = subprocess.run(
+                list(command),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            raise RuntimeError(str(exc)) from exc
         if completed.returncode != 0:
             raise RuntimeError((completed.stderr or completed.stdout or "helper failed").strip())
         if completed.stdout.strip() == "":
             return {}
-        payload = json.loads(completed.stdout)
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("helper did not return valid JSON") from exc
         if not isinstance(payload, dict):
             raise RuntimeError("helper did not return a JSON object")
         return cast(dict[str, Any], payload)

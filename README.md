@@ -90,7 +90,7 @@ Playback variables:
 
 For the controller app, the Spotify refresh token must include `user-read-playback-state` and `user-modify-playback-state`.
 Receiver-service credentials and persistent session material are configured separately for `spotifyd`; they do not belong in `/etc/jukebox/jukebox.env`.
-The runtime follows the API-discipline rules in [`docs/api-discipline.md`](/Users/markus/Workspace/jukebox/docs/api-discipline.md): health, idle, and `status.json` read passive cached playback state only, and `current_player_active()` is reserved for scan-time queue routing.
+The runtime follows the API-discipline rules in [`docs/api-discipline.md`](/Users/markus/Workspace/jukebox/docs/api-discipline.md): health and `status.json` remain passive, while `current_player_active()` is limited to queue-mode scan routing and one temporary validation after a complete idle interval expires.
 
 For Raspberry Pi deployment, start from [`systemd/jukebox.env.example`](/Users/markus/Workspace/jukebox/systemd/jukebox.env.example) and place the real file at `/etc/jukebox/jukebox.env`.
 

@@ -92,7 +92,7 @@ class PlaybackBackend(Protocol):
         """Return whether playback is currently active on the target device."""
 
     def current_player_active(self) -> bool | None:
-        """Return current player activity using a scan-scoped live check."""
+        """Return current player activity using an explicit live check."""
 
 
 class EventSink(Protocol):

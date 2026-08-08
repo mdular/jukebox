@@ -145,6 +145,9 @@ class SpotifyPlaybackBackend:
             access_token_or_error, target_device_or_error, request
         )
         if not play_result.ok:
+            if play_result.reason_code != "spotify_start_failed":
+                self._cache_from_result(play_result)
+                return play_result
             transfer_result = self._transfer_playback(
                 access_token_or_error, target_device_or_error
             )
@@ -308,7 +311,7 @@ class SpotifyPlaybackBackend:
         return self._cached_player_active
 
     def current_player_active(self) -> bool | None:
-        """Perform one live playback-state read for queue-mode scan routing."""
+        """Perform one live playback-state read for explicit activity validation."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):

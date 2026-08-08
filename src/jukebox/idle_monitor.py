@@ -10,7 +10,7 @@ from .core.models import ControllerEvent, EventSink
 
 Clock = Callable[[], float]
 ShutdownCallback = Callable[[str], object]
-PlayerActive = Callable[[], bool | None]
+CurrentPlayerActive = Callable[[], bool | None]
 
 
 class IdleMonitor(EventSink):
@@ -20,13 +20,13 @@ class IdleMonitor(EventSink):
         self,
         *,
         idle_shutdown_seconds: float | None,
-        player_active: PlayerActive,
+        current_player_active: CurrentPlayerActive,
         shutdown_callback: ShutdownCallback,
         poll_interval_seconds: float = 1.0,
         clock: Clock | None = None,
     ) -> None:
         self._idle_shutdown_seconds = idle_shutdown_seconds
-        self._player_active = player_active
+        self._current_player_active = current_player_active
         self._shutdown_callback = shutdown_callback
         self._poll_interval_seconds = poll_interval_seconds
         self._clock = time.monotonic if clock is None else clock
@@ -85,10 +85,15 @@ class IdleMonitor(EventSink):
             return None
         if self._setup_mode_active:
             return None
-        player_active = self._player_active()
-        if player_active is None or player_active:
+        now = self._clock()
+        if (now - self._last_activity) < self._idle_shutdown_seconds:
             return None
-        if (self._clock() - self._last_activity) < self._idle_shutdown_seconds:
+
+        # TODO(EPIC-5): Replace this deadline-scoped live check with state-machine
+        # transitions emitted by a backend-neutral playback observer.
+        player_active = self._current_player_active()
+        if player_active is None or player_active:
+            self._last_activity = now
             return None
 
         self._shutdown_requested = True

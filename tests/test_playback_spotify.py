@@ -249,6 +249,38 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
             {"device_ids": ["device-id"], "play": False},
         )
 
+    def test_dispatch_does_not_transfer_after_direct_play_is_rate_limited(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox"}]},
+                ),
+                _http_error(
+                    "https://api.spotify.com/v1/me/player/play?device_id=device-id",
+                    429,
+                    retry_after=30,
+                ),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "spotify_rate_limited")
+        assert result.message is not None
+        self.assertIn("retry in 30s", result.message)
+        self.assertEqual(
+            [(request.full_url, request.get_method()) for request in requester.requests],
+            [
+                ("https://accounts.spotify.com/api/token", "POST"),
+                ("https://api.spotify.com/v1/me/player/devices", "GET"),
+                ("https://api.spotify.com/v1/me/player/play?device_id=device-id", "PUT"),
+            ],
+        )
+
     def test_dispatch_retries_once_when_target_is_not_listed_initially(self) -> None:
         requester = _SequenceRequester(
             [

@@ -127,11 +127,13 @@ Record the configured grace-period value used for the test and whether the obser
 Idle shutdown must stay conservative:
 
 1. Set `JUKEBOX_IDLE_SHUTDOWN_SECONDS` to a short test value.
-2. Confirm idle shutdown does not trigger while playback is active.
-3. Confirm idle shutdown does not trigger while player state is unknown or while the runtime is in `setup_required` or `auth_required`.
-4. Stop playback and leave the box untouched long enough to exceed the configured idle timeout.
-5. Confirm the runtime emits the idle-shutdown request and the Pi shuts down cleanly.
-6. Restore power normally and confirm the appliance boots back into the expected ready, degraded, or setup state without manual filesystem repair.
+2. Confirm no live player-state check occurs before the complete idle interval expires.
+3. Confirm an expired interval performs one live validation and does not trigger shutdown while playback is active.
+4. Confirm active or unknown player state re-arms another complete interval rather than producing rapid follow-up checks.
+5. Confirm idle shutdown does not trigger while the runtime is in `setup_required` or `auth_required`.
+6. Stop playback and leave the box untouched long enough to exceed the configured idle timeout.
+7. Confirm the runtime emits the idle-shutdown request and the Pi shuts down cleanly.
+8. Restore power normally and confirm the appliance boots back into the expected ready, degraded, or setup state without manual filesystem repair.
 
 ## Scanner and Audio Regression Validation
 

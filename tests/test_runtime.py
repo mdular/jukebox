@@ -72,6 +72,7 @@ class BuildRuntimeTests(unittest.TestCase):
             )
             operator_state = OperatorStateStore(state_path)
             operator_state.mark_receiver_reauth_requested(True)
+            operator_state.mark_receiver_reauth_started()
 
             with patch("jukebox.runtime.CommandSystemHelpers", return_value=helper):
                 runtime = build_runtime(settings, io.StringIO(""))
@@ -90,6 +91,130 @@ class BuildRuntimeTests(unittest.TestCase):
             self.assertFalse(operator_state.load().receiver_reauth_requested)
             assert auth_response.text_body is not None
             self.assertIn("succeeded", auth_response.text_body)
+
+    def test_stale_auth_success_does_not_clear_a_new_reauth_request(self) -> None:
+        helper = _FakeSystemHelpers(
+            auth_status_payload={
+                "state": "succeeded",
+                "message": "receiver authentication completed",
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            settings = from_env(
+                {
+                    "JUKEBOX_ENV": "test",
+                    "JUKEBOX_OPERATOR_STATE_PATH": str(state_path),
+                }
+            )
+            operator_state = OperatorStateStore(state_path)
+            operator_state.mark_receiver_reauth_requested(True)
+
+            with patch("jukebox.runtime.CommandSystemHelpers", return_value=helper):
+                runtime = build_runtime(settings, io.StringIO(""))
+
+            operator_server = next(
+                service for service in runtime.services if isinstance(service, OperatorHttpServer)
+            )
+            response = operator_server.handle_request("GET", "/status.json")
+
+            payload = response.json_body
+            assert payload is not None
+            runtime_payload = payload["runtime"]
+            assert isinstance(runtime_payload, dict)
+            state = operator_state.load()
+            self.assertTrue(runtime_payload["auth_required"])
+            self.assertTrue(state.receiver_reauth_requested)
+            self.assertFalse(state.receiver_reauth_started)
+
+    def test_browser_auth_start_enters_auth_required_until_success(self) -> None:
+        helper = _FakeSystemHelpers(
+            start_auth_payload={
+                "state": "pending",
+                "message": "starting receiver authentication",
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            settings = from_env(
+                {
+                    "JUKEBOX_ENV": "test",
+                    "JUKEBOX_OPERATOR_STATE_PATH": str(state_path),
+                }
+            )
+            operator_state = OperatorStateStore(state_path)
+
+            with patch("jukebox.runtime.CommandSystemHelpers", return_value=helper):
+                runtime = build_runtime(settings, io.StringIO(""))
+
+            operator_server = next(
+                service for service in runtime.services if isinstance(service, OperatorHttpServer)
+            )
+            start_response = operator_server.handle_request("POST", "/auth/start")
+            status_response = operator_server.handle_request("GET", "/status.json")
+
+            assert start_response.json_body is not None
+            assert status_response.json_body is not None
+            runtime_payload = status_response.json_body["runtime"]
+            assert isinstance(runtime_payload, dict)
+            state = operator_state.load()
+            self.assertEqual(start_response.json_body["state"], "pending")
+            self.assertTrue(runtime_payload["auth_required"])
+            self.assertTrue(state.receiver_reauth_requested)
+            self.assertTrue(state.receiver_reauth_started)
+            self.assertEqual(helper.start_auth_calls, 1)
+
+    def test_runtime_does_not_require_auth_helper_without_active_request(self) -> None:
+        helper = _FakeSystemHelpers(auth_status_error=RuntimeError("helper unavailable"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = from_env(
+                {
+                    "JUKEBOX_ENV": "test",
+                    "JUKEBOX_OPERATOR_STATE_PATH": str(Path(temp_dir) / "state.json"),
+                }
+            )
+
+            with patch("jukebox.runtime.CommandSystemHelpers", return_value=helper):
+                runtime = build_runtime(settings, io.StringIO(""))
+
+            operator_server = next(
+                service for service in runtime.services if isinstance(service, OperatorHttpServer)
+            )
+            response = operator_server.handle_request("GET", "/status.json")
+
+            assert response.json_body is not None
+            runtime_payload = response.json_body["runtime"]
+            assert isinstance(runtime_payload, dict)
+            self.assertFalse(runtime_payload["auth_required"])
+            self.assertEqual(helper.auth_status_calls, 0)
+
+    def test_auth_helper_failure_keeps_active_request_degraded(self) -> None:
+        helper = _FakeSystemHelpers(auth_status_error=RuntimeError("helper unavailable"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            settings = from_env(
+                {
+                    "JUKEBOX_ENV": "test",
+                    "JUKEBOX_OPERATOR_STATE_PATH": str(state_path),
+                }
+            )
+            operator_state = OperatorStateStore(state_path)
+            operator_state.mark_receiver_reauth_requested(True)
+
+            with patch("jukebox.runtime.CommandSystemHelpers", return_value=helper):
+                runtime = build_runtime(settings, io.StringIO(""))
+
+            operator_server = next(
+                service for service in runtime.services if isinstance(service, OperatorHttpServer)
+            )
+            response = operator_server.handle_request("GET", "/status.json")
+
+            assert response.json_body is not None
+            runtime_payload = response.json_body["runtime"]
+            assert isinstance(runtime_payload, dict)
+            self.assertTrue(runtime_payload["auth_required"])
+            self.assertTrue(operator_state.load().receiver_reauth_requested)
+            self.assertGreaterEqual(helper.auth_status_calls, 1)
 
     def test_incomplete_auth_status_keeps_receiver_reauth_requested(self) -> None:
         for auth_state in ("pending", "running", "failed"):
@@ -224,11 +349,21 @@ class BuildRuntimeTests(unittest.TestCase):
 
 
 class _FakeSystemHelpers:
-    def __init__(self, *, auth_status_payload: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        auth_status_payload: dict[str, object] | None = None,
+        start_auth_payload: dict[str, object] | None = None,
+        auth_status_error: RuntimeError | None = None,
+    ) -> None:
         self.auth_status_payload = auth_status_payload or {
             "state": "failed",
             "message": "auth not started",
         }
+        self.start_auth_payload = start_auth_payload or {"state": "pending"}
+        self.auth_status_error = auth_status_error
+        self.auth_status_calls = 0
+        self.start_auth_calls = 0
 
     def status(self) -> dict[str, bool]:
         return {
@@ -245,9 +380,13 @@ class _FakeSystemHelpers:
         return "saved"
 
     def start_auth(self) -> dict[str, object]:
-        return {"state": "pending"}
+        self.start_auth_calls += 1
+        return dict(self.start_auth_payload)
 
     def auth_status(self) -> dict[str, object]:
+        self.auth_status_calls += 1
+        if self.auth_status_error is not None:
+            raise self.auth_status_error
         return dict(self.auth_status_payload)
 
     def reset_wifi(self) -> tuple[bool, str]:

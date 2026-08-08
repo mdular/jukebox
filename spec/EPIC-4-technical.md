@@ -67,7 +67,7 @@ Those remain optional future hardening ideas if later validation on the merge ta
 - Keep ordinary Spotify music-card behavior simple and child-first.
 - Preserve the existing EPIC 4 control-card, setup-mode, operator-state, and helper boundaries already present on `main`.
 - Make runtime readiness honest: no `ready` until the appliance can autonomously scan and play.
-- Keep background Spotify API usage at zero. Health, idle, and status paths must read cached state only.
+- Keep periodic background Spotify API usage at zero. Health and status paths must read cached state only; the temporary idle bridge may make one explicit validation only after a complete idle interval expires.
 - Keep queue-mode behavior honest for track cards without pretending album or playlist queue support exists.
 - Surface degraded Spotify causes distinctly enough that operators do not have to infer them from ambiguous playback symptoms.
 - Reuse the current standard-library operator server and helper-script boundaries instead of adding a heavier web or system-management stack.
@@ -127,8 +127,8 @@ Current `main` cannot guarantee that because its queue decision uses `player_act
 Resolution:
 
 - adopt `PlaybackBackend.current_player_active()` from `fix-glitch-kilo-opus`
-- keep `player_active()` as a passive cached signal for background consumers like idle monitoring
-- use `current_player_active()` only on the scan path for queue-mode track cards
+- keep `player_active()` as a passive cached diagnostic signal
+- use `current_player_active()` on the scan path for queue-mode track cards and, temporarily, once after an idle deadline expires
 - treat any result other than `True` as fallback to replace-style dispatch
 
 ### Honest Diagnostics Require Passive Status
@@ -141,7 +141,8 @@ Resolution:
 - adopt the `fix-glitch-kilo-opus` passive-status discipline
 - seed playback status once in `probe()`
 - update cached playback status and cached player activity as side effects of real operations
-- make health, idle, and operator status consumers read cached values only
+- make health and operator status consumers read cached values only
+- let the interim idle monitor validate activity once only after a complete idle interval, pending the transition-driven observer design in [spec/EPIC-5-draft.md](/Users/markus/Workspace/jukebox/spec/EPIC-5-draft.md)
 - surface `spotify_rate_limited` distinctly in health, terminal feedback, logging, and `status.json`
 
 ### Replace-Mode Confirmation Boundary
@@ -215,7 +216,8 @@ SpotifyPlaybackBackend
        -> confirm playback on configured target
        -> update passive status + player_active cache
   -> current_player_active():
-       -> one scan-scoped /me/player read for queue routing only
+       -> one explicit /me/player read for queue routing
+       -> temporary one-read validation after an expired idle interval
   -> status(), player_active():
        -> no API calls
 
@@ -310,6 +312,10 @@ The main architectural change is to bring the Spotify backend and its consumers 
    - scanner, playback, setup, and idle status
    - non-secret maintenance config
 4. Receiver auth remains implemented through the existing helper boundary, but the helper script must be completed so `POST /auth/start` returns a real approval flow rather than the current stub failure.
+   - browser-initiated auth marks receiver re-auth as requested before starting the helper
+   - persisted state distinguishes a requested flow from one that has actually started
+   - only success from the current started flow clears `auth_required`; stale helper success does not
+   - helper unavailability remains an auth degradation and does not block unrelated runtime startup
 5. Wi-Fi replacement remains implemented through the existing helper boundary:
    - the operator server submits SSID and passphrase to `CommandSystemHelpers.apply_wifi()`
    - the Wi-Fi helper snapshots the previous working client connection when one exists
@@ -319,16 +325,17 @@ The main architectural change is to bring the Spotify backend and its consumers 
 ### Idle and Health Monitoring
 
 1. `IdleMonitor` continues to derive household activity from controller events and remain disabled during `setup_required` and `auth_required`.
-2. `IdleMonitor` must use passive `player_active()` only.
-3. `RuntimeHealthMonitor` must read passive playback status only and never trigger Spotify API calls indirectly.
-4. Health priority must treat `spotify_rate_limited` as a degraded state distinct from generic network failure.
+2. As an interim EPIC 4 bridge, `IdleMonitor` may call `current_player_active()` once only after a complete idle interval expires; active or unknown state re-arms another complete interval, while confirmed inactivity requests shutdown.
+3. Ordinary idle ticks must not call Spotify. The bridge is marked `TODO(EPIC-5)` and must be replaced by playback-state transitions from a backend-neutral observer.
+4. `RuntimeHealthMonitor` must read passive playback status only and never trigger Spotify API calls indirectly.
+5. Health priority must treat `spotify_rate_limited` as a degraded state distinct from generic network failure.
 
 ## Module Plan
 
 ### Existing Files to Extend
 
 - [src/jukebox/adapters/playback_spotify.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/playback_spotify.py)
-  Purpose: adopt direct-play-first handoff, single-URI track starts, cached tokens, passive `status()` and `player_active()`, scan-scoped `current_player_active()`, bounded startup device retries, and explicit `spotify_rate_limited` handling.
+  Purpose: adopt direct-play-first handoff, single-URI track starts, cached tokens, passive `status()` and `player_active()`, explicit `current_player_active()` validation, bounded startup device retries, and explicit `spotify_rate_limited` handling.
 - [src/jukebox/core/models.py](/Users/markus/Workspace/jukebox/src/jukebox/core/models.py)
   Purpose: formalize `status()` and `current_player_active()` on the `PlaybackBackend` protocol and keep `PlaybackRequest` free of branch-only `stop_after_track` behavior.
 - [src/jukebox/core/controller.py](/Users/markus/Workspace/jukebox/src/jukebox/core/controller.py)
@@ -398,15 +405,16 @@ The playback backend contract becomes:
 - `skip_next()`
 - `set_volume_percent()`
 - `player_active()` for passive background reads
-- `current_player_active()` for scan-scoped queue routing
+- `current_player_active()` for explicit queue routing and the temporary expired-idle-deadline bridge
 
 ### Operator State
 
-The persisted operator state on `main` remains the correct baseline:
+The persisted operator state includes:
 
 - `playback_mode`
 - `setup_requested`
 - `receiver_reauth_requested`
+- `receiver_reauth_started`
 - `last_wifi_mode`
 - `enabled_actions`
 - `schema_version`
@@ -473,7 +481,7 @@ The selected operator and diagnostic surfaces become:
   - token caching
   - passive `status()`
   - passive `player_active()`
-  - scan-scoped `current_player_active()`
+  - explicit `current_player_active()`
   - direct-play-first with transfer fallback
   - single-URI track starts
   - bounded probe retries
@@ -481,7 +489,8 @@ The selected operator and diagnostic surfaces become:
 - update controller tests so queue-mode routing only enqueues on `current_player_active() is True`
 - update runtime-health, feedback, and logging tests to cover `spotify_rate_limited`
 - extend runtime tests to cover startup `probe()` seeding and the new retry settings
-- keep operator-server, setup-mode, idle-monitor, and action-router tests as the current scaffold; they already match the selected architecture
+- extend idle-monitor tests to prove that the temporary live validation happens only after a full interval and re-arms a full interval for active or unknown state
+- keep operator-server, setup-mode, and action-router tests as the current scaffold; they already match the selected architecture
 
 ### Script and Integration Tests
 

@@ -8,8 +8,8 @@ This runbook matches the EPIC 4 baseline:
 
 - direct-play-first handoff with transfer fallback
 - single-URI track starts for replace mode
-- passive cached runtime status for health, idle, and `status.json`
-- scan-scoped `current_player_active()` only for queue-mode track routing
+- passive cached runtime status for health and `status.json`
+- explicit `current_player_active()` for queue-mode track routing and the temporary expired-idle-deadline bridge
 
 ## Before You Start
 
