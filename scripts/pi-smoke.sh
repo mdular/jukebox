@@ -38,6 +38,41 @@ port = os.environ.get("JUKEBOX_OPERATOR_HTTP_PORT", "8080")
 url = f"http://127.0.0.1:{port}/status.json"
 with urlopen(url, timeout=5) as response:
     payload = json.loads(response.read().decode("utf-8"))
+
+required_paths = (
+    ("feedback", "display_state"),
+    ("feedback", "message"),
+    ("runtime", "playback_mode"),
+    ("runtime", "setup_required"),
+    ("runtime", "auth_required"),
+    ("runtime", "enabled_actions"),
+    ("runtime", "scanner"),
+    ("runtime", "playback"),
+    ("runtime", "setup"),
+    ("runtime", "config"),
+    ("runtime", "idle"),
+)
+
+allowed_playback_codes = {
+    "ready",
+    "controller_auth_unavailable",
+    "spotify_rate_limited",
+    "network_unavailable",
+    "receiver_unavailable",
+}
+
+cursor = payload
+for path in required_paths:
+    cursor = payload
+    for key in path:
+        if not isinstance(cursor, dict) or key not in cursor:
+            raise SystemExit(f"status.json missing required path: {'.'.join(path)}")
+        cursor = cursor[key]
+
+playback = payload["runtime"]["playback"]
+if playback["code"] not in allowed_playback_codes:
+    raise SystemExit(f"unexpected runtime.playback.code: {playback['code']}")
+
 print(json.dumps(payload, indent=2, sort_keys=True))
 PY
 SH

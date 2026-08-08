@@ -48,6 +48,11 @@ class CommandSystemHelpers:
             *self._privileged_command(self.spotifyd_auth_helper_command, "start")
         )
 
+    def auth_status(self) -> dict[str, object]:
+        return self._run_json(
+            *self._privileged_command(self.spotifyd_auth_helper_command, "status")
+        )
+
     def request_shutdown(self, *, reason: str) -> tuple[bool, str]:
         return self._run_status(
             *self._privileged_command(self.shutdown_helper_command, "--reason", reason)

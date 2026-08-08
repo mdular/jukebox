@@ -5,14 +5,13 @@
 This document turns [spec/EPIC-4-requirements.md](/Users/markus/Workspace/jukebox/spec/EPIC-4-requirements.md) into an implementation design for the current Python repository.
 It is intentionally scoped to EPIC 4: finish the standalone V1 appliance with clearer feedback, selected card-driven controls, companion setup and auth flows, automatic Wi-Fi fallback, and idle-power behavior while preserving the hardened EPIC 3 runtime.
 
-This design is grounded in the repository structure already present at the start of EPIC 4:
+This revision reconciles the design to three realities at once:
 
-- Python 3.11 package code under `src/jukebox`
-- an existing controller, strict Spotify URI parser, duplicate gate, `evdev` scanner adapter, Spotify Web API playback backend, and runtime health monitor
-- `systemd/jukebox.service` plus `systemd/jukebox.env.example`
-- Pi helper scripts under `scripts/`
-- Pi setup, deploy, validation, build, and setup-log docs under `docs/`
-- automated tests already covering config, controller flow, feedback rendering, `evdev`, Spotify playback, runtime health, and `main.py`
+- the actual `main` branch already contains most of the EPIC 4 scaffolding
+- the updated EPIC 4 requirements now make the Spotify playback behavior contract more explicit
+- the strongest validated Spotify behavior currently lives across `fix-glitch-kilo-opus` and `playback-fix-codex`, not in `main` alone
+
+The design therefore treats current `main` as the implementation baseline, carries forward the validated Spotify runtime changes from `fix-glitch-kilo-opus`, carries forward the probe tooling from `playback-fix-codex`, and leaves branch-only hardening that is not required by the updated requirements outside the default EPIC 4 design.
 
 ## Selected Decisions Carried Into This Design
 
@@ -22,282 +21,264 @@ This technical design assumes the checked decisions and notes in [spec/EPIC-4-re
 - Immediate acknowledgement remains distinct from playback confirmation, and the existing Netum NT-91 scanner beep is treated as part of that immediate acknowledgement rather than ignored.
 - Stop behavior is card-driven first, not hardware-button driven.
 - EPIC 4 reopens broader card-control design and includes the checked D-10 control items in V1 scope.
-- Volume remains in the hardware audio path, and the mono amp-and-speaker baseline remains unchanged even though optional software-side volume preset cards are now in scope.
+- Volume remains in the hardware audio path, and the mono amp-and-speaker baseline remains unchanged even though optional software-side volume preset cards are in scope.
 - The operator flow expands into a browser-based companion configuration interface that can cover setup, receiver auth or re-auth, and selected recovery actions.
 - Maintenance ergonomics stay focused and lightweight, including a diagnostic JSON surface rather than a full dashboard.
-- EPIC 4 regression validation reuses the EPIC 3 boot, recovery, and scan-to-playback baseline and must rerun the network-interruption checks because the selected scope now touches networking.
+- EPIC 4 must preserve honest ready gating, honest replace-versus-queue behavior on the jukebox target, and explicit degraded-state visibility for receiver unavailability, controller-auth failure, network failure, and Spotify throttling.
 - The checked D-10 items are committed EPIC 4 scope, while the unchecked items remain post-roadmap backlog.
 
-This design makes four explicit implementation assumptions so the expanded scope stays concrete:
+This design makes five explicit implementation assumptions so the selected requirements stay concrete:
 
-- The additional setup card selected under D-10 will be implemented as a receiver re-auth entry card, because receiver auth and re-auth are already selected EPIC 4 maintenance flows.
-- Replace-versus-queue mode is implemented as `replace` versus `queue_tracks`. Track cards queue while playback is already active, but still start playback if the target player is idle. Album and playlist cards keep replace semantics and surface that limitation honestly.
-- Volume preset cards are implemented through Spotify Connect software volume percentages. They complement but do not replace the amplifier's own volume controls.
-- Automatic Wi-Fi fallback is a setup-access behavior for missing Wi-Fi configuration, explicit Wi-Fi reset, or sustained boot-time inability to reach a configured network. Ordinary transient runtime outages remain degraded-state recovery, not immediate AP fallback.
+- The additional setup card selected under D-10 remains `setup.receiver-reauth`, because receiver auth and re-auth are already selected maintenance flows and the current repo already routes that action through operator state.
+- Replace-versus-queue mode remains `replace` versus `queue_tracks`. Track cards queue only while playback is already active on the jukebox target. Album and playlist cards keep replace semantics in queue mode and surface that limitation honestly.
+- Replace-mode track starts adopt the validated `fix-glitch-kilo-opus` behavior: `{"uris": [track]}` payloads plus direct-play-first handoff. This is an implementation choice, not a payload-format change visible to cards.
+- Because replace and queue behavior have been tested most on the `fix-glitch-kilo-opus` line without new issues, EPIC 4 does not add `stop_after_track`, background stop monitoring, or snapshot-based stale-content confirmation as default runtime behavior.
+- The probe script and runbook from `playback-fix-codex` are worth carrying forward, but they must be adapted to the selected EPIC 4 baseline rather than preserving branch-only stop-after-track behavior.
+
+## Branch Learnings Adopted
+
+### Adopt From `fix-glitch-kilo-opus`
+
+- direct-play-first handoff with transfer fallback
+- single-URI track starts for replace mode
+- cached OAuth tokens
+- passive cached `status()` and passive cached `player_active()`
+- scan-scoped `current_player_active()` for queue-mode routing
+- bounded boot-time device visibility retries in `probe()`
+- explicit `spotify_rate_limited` state and `Retry-After` visibility
+- warning-level logging and terminal rendering for degraded playback states
+- `docs/api-discipline.md` as an implementation guardrail
+
+### Adopt From `playback-fix-codex`
+
+- `docs/spotify-connect-debug.md`
+- `scripts/spotify_connect_probe.py`
+
+### Do Not Adopt As Default EPIC 4 Behavior
+
+- `PlaybackRequest.stop_after_track`
+- background stop-monitor threads
+- snapshot-delta playback confirmation as a required runtime safeguard
+
+Those remain optional future hardening ideas if later validation on the merge target demonstrates a real failure that they prevent.
 
 ## Design Goals
 
-- Keep the current Spotify scan-to-playback behavior intact for ordinary music cards.
-- Add explicit non-Spotify control-card support without mixing operator actions into the normal music-card path implicitly.
-- Reuse the current event-driven runtime so terminal output, structured logs, the new operator interface, and the idle monitor share one canonical status model.
-- Preserve the V1 mono amp-and-speaker baseline while adding queue toggles, volume presets, and next-track in a way that stays honest about Spotify API limits.
-- Isolate privileged Wi-Fi, shutdown, and receiver-auth work behind narrow helper boundaries rather than expanding the main Python process privileges.
-- Make explicit Wi-Fi reset and Wi-Fi replacement safe to test remotely by using helper-owned rollback instead of one-way client-network mutations.
-- Keep the operator interface lightweight enough for Raspberry Pi 3 by using the Python standard library instead of a heavy web framework.
-- Add automatic Wi-Fi fallback and idle auto-shutdown in a way that improves standalone serviceability instead of creating more recovery ambiguity.
-- Leave a clear post-standalone review checkpoint for further UX experimentation without under-delivering the selected EPIC 4 scope.
+- Keep ordinary Spotify music-card behavior simple and child-first.
+- Preserve the existing EPIC 4 control-card, setup-mode, operator-state, and helper boundaries already present on `main`.
+- Make runtime readiness honest: no `ready` until the appliance can autonomously scan and play.
+- Keep background Spotify API usage at zero. Health, idle, and status paths must read cached state only.
+- Keep queue-mode behavior honest for track cards without pretending album or playlist queue support exists.
+- Surface degraded Spotify causes distinctly enough that operators do not have to infer them from ambiguous playback symptoms.
+- Reuse the current standard-library operator server and helper-script boundaries instead of adding a heavier web or system-management stack.
+- Keep the code runnable on non-Pi machines where practical and keep Pi-only behavior behind adapters and scripts.
 
 ## Non-Goals
 
 - No built-in volume control, further amp or speaker integration, or enclosure-acoustics work.
 - No physical stop button, rotary encoder, next-track button, or GPIO control surface in EPIC 4.
 - No broader management dashboard or child-facing daily-use web UI.
-- No printer-friendly QR generator, local playback fallback, story cards, podcast cards, or queue mode as the new primary playback model.
-- No read-only filesystem mode, OTA updates, or blank-device self-provisioning image pipeline.
-- No reimplementation of `spotifyd` credential formats inside the Python app.
+- No queue support for album or playlist cards.
+- No `stop_after_track`, single-track completion control, or snapshot-confirmation hardening in the default EPIC 4 runtime.
+- No local playback fallback, printer-friendly card generation, OTA updates, read-only filesystem mode, or other post-roadmap backlog items.
+- No reimplementation of `spotifyd authenticate` protocols inside Python.
 
 ## Current Baseline
 
-The repository already contains the hardened EPIC 3 runtime that EPIC 4 should extend directly:
+Current `main` already contains most of the EPIC 4 scaffolding that the earlier technical draft described as future work:
 
-- [src/jukebox/core/parser.py](/Users/markus/Workspace/jukebox/src/jukebox/core/parser.py) only accepts strict Spotify URIs and has no notion of control or setup cards.
-- [src/jukebox/core/controller.py](/Users/markus/Workspace/jukebox/src/jukebox/core/controller.py) only routes successful scans into playback dispatch; it cannot execute control, setup, or system actions.
-- [src/jukebox/core/models.py](/Users/markus/Workspace/jukebox/src/jukebox/core/models.py) does not yet model control-card intents, control-action results, playback-mode state, or reusable feedback snapshots.
-- [src/jukebox/adapters/feedback.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/feedback.py) only renders terminal lines from controller events and does not maintain a reusable feedback snapshot for another surface such as an operator UI.
-- [src/jukebox/runtime.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime.py) assembles only input, playback, and the runtime health monitor.
-- [src/jukebox/runtime_health.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime_health.py) only merges scanner and playback dependency states and has no explicit setup-required or auth-required mode.
-- [src/jukebox/adapters/playback_spotify.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/playback_spotify.py) can transfer and start playback, but it cannot stop playback, skip, queue tracks, set volume presets, or report player activity for idle shutdown decisions.
-- [systemd/jukebox.service](/Users/markus/Workspace/jukebox/systemd/jukebox.service) runs as `pi` with no privileged helper path for Wi-Fi changes or clean shutdown.
-- [docs/pi-setup.md](/Users/markus/Workspace/jukebox/docs/pi-setup.md) still documents manual Wi-Fi setup through Raspberry Pi Imager and manual off-device `spotifyd authenticate` plus credential-file copy.
-- [scripts/pi-smoke.sh](/Users/markus/Workspace/jukebox/scripts/pi-smoke.sh) duplicates a Spotify visibility probe inline instead of reading service-owned health JSON.
+- [src/jukebox/core/cards.py](/Users/markus/Workspace/jukebox/src/jukebox/core/cards.py) already defines typed Spotify media cards, `jukebox:` action cards, supported action ids, and persisted playback modes.
+- [src/jukebox/core/controller.py](/Users/markus/Workspace/jukebox/src/jukebox/core/controller.py) already routes action cards through an action router and media cards through replace-versus-queue behavior.
+- [src/jukebox/adapters/action_router.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/action_router.py) already handles stop, next, playback-mode toggles, volume presets, Wi-Fi reset, receiver re-auth, and shutdown actions.
+- [src/jukebox/operator_state.py](/Users/markus/Workspace/jukebox/src/jukebox/operator_state.py), [src/jukebox/operator_server.py](/Users/markus/Workspace/jukebox/src/jukebox/operator_server.py), [src/jukebox/setup_mode.py](/Users/markus/Workspace/jukebox/src/jukebox/setup_mode.py), [src/jukebox/feedback_state.py](/Users/markus/Workspace/jukebox/src/jukebox/feedback_state.py), [src/jukebox/idle_monitor.py](/Users/markus/Workspace/jukebox/src/jukebox/idle_monitor.py), and [src/jukebox/adapters/system_helpers.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/system_helpers.py) already exist and define the operator surface, persisted state, setup mode policy, feedback snapshot, idle tracking, and helper boundaries.
+- `scripts/runtime/` already contains Wi-Fi, `spotifyd` auth, and shutdown helper entrypoints, and `sudoers/jukebox-maintenance` already scopes privileged execution.
+- [scripts/runtime/jukebox-wifi-helper.sh](/Users/markus/Workspace/jukebox/scripts/runtime/jukebox-wifi-helper.sh) already contains the rollback-safe client-trial structure for Wi-Fi replacement, including pending state, boot-aware rollback, and setup-AP activation.
+- `tests/` already covers the action router, parser, controller, operator server, operator state, setup mode, idle monitor, runtime, and helper adapters.
 
-The main EPIC 4 gaps are therefore:
+The remaining mismatch is concentrated in Spotify playback behavior, diagnostics, and stale documentation:
 
-- the payload model still assumes every meaningful card is a Spotify URI
-- the controller cannot distinguish child-facing music cards from control, setup, and system cards
-- the runtime has no persistent operator-state store for playback mode, setup mode, or browser-surface data
-- the service has no built-in status JSON or browser-based setup and auth surface
-- Wi-Fi recovery, automatic fallback, graceful shutdown, receiver auth, and idle shutdown still depend on manual shell workflows or do not exist
-- there is no explicit technical bridge between the selected EPIC 4 experiments and the post-standalone review checkpoint
+- [src/jukebox/adapters/playback_spotify.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/playback_spotify.py) on `main` still uses transfer-first handoff, album-context track payloads when lookup succeeds, live `status()` calls, live `player_active()` calls, and uncached token refreshes.
+- [src/jukebox/core/models.py](/Users/markus/Workspace/jukebox/src/jukebox/core/models.py) on `main` does not yet expose `current_player_active()` on the playback protocol.
+- [src/jukebox/core/controller.py](/Users/markus/Workspace/jukebox/src/jukebox/core/controller.py) on `main` still bases queue-mode routing on `player_active()`, which can misroute scans when target activity is stale or unknown.
+- [src/jukebox/config.py](/Users/markus/Workspace/jukebox/src/jukebox/config.py) and [src/jukebox/runtime.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime.py) on `main` do not yet carry the bounded startup device-probe retry settings from `fix-glitch-kilo-opus`.
+- [src/jukebox/runtime_health.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime_health.py), [src/jukebox/adapters/feedback.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/feedback.py), and [src/jukebox/logging.py](/Users/markus/Workspace/jukebox/src/jukebox/logging.py) on `main` do not yet surface `spotify_rate_limited` as a first-class degraded state.
+- The helper script boundary already exists, but [scripts/runtime/jukebox-spotifyd-auth-helper.sh](/Users/markus/Workspace/jukebox/scripts/runtime/jukebox-spotifyd-auth-helper.sh) is still a stub and must be completed for the standalone auth flow to be real.
+- `main` does not yet carry forward `docs/api-discipline.md`, `docs/spotify-connect-debug.md`, or `scripts/spotify_connect_probe.py`.
 
 ## Spec Alignment Notes
 
-There are five important tensions between the checked EPIC 4 decisions, the current repo, and the existing EPIC 3 assumptions.
+### Current Repo vs Older Draft
 
-### Control Cards Need an Explicit Namespace
-
-The requirements now include stop, next-track, queue toggles, volume presets, shutdown, Wi-Fi reset, and an additional setup card, but the current repo only has a strict Spotify parser.
-That leaves the raw payload format for non-Spotify cards unspecified.
-
-Resolution:
-
-- introduce a private `jukebox:<group>:<action>` payload namespace for non-Spotify cards
-- keep Spotify URIs as-is for music cards
-- implement these EPIC 4 actions:
-  - `jukebox:playback:stop`
-  - `jukebox:playback:next`
-  - `jukebox:mode:replace`
-  - `jukebox:mode:queue`
-  - `jukebox:volume:low`
-  - `jukebox:volume:medium`
-  - `jukebox:volume:high`
-  - `jukebox:setup:wifi-reset`
-  - `jukebox:setup:receiver-reauth`
-  - `jukebox:system:shutdown`
-
-This keeps media parsing strict while giving EPIC 4 a concrete, testable control surface.
-
-### External Volume Baseline vs Volume Preset Cards
-
-The checked requirements keep physical volume external, but the checked D-10 scope now includes volume preset cards.
-Those are compatible only if the design treats them as software-side convenience controls rather than a product-direction change.
+The old technical draft assumed EPIC 4 still needed new modules like `receiver_auth.py` and a fresh operator-state layer.
+That is no longer true.
+The current repo already has the operator server, state store, setup-mode manager, idle monitor, action router, and helper adapter.
 
 Resolution:
 
-- keep the amplifier as the only required physical volume surface
-- implement volume preset cards through the Spotify Web API volume endpoint
-- make the preset percentages explicit config, not hard-coded behavior
-- surface `volume_control_unavailable` honestly if the active receiver cannot honor software volume changes
+- keep those existing modules as the implementation backbone
+- remove the invented `receiver_auth.py` layer from the design
+- complete receiver auth through the existing `OperatorHttpServer -> CommandSystemHelpers.start_auth() -> jukebox-spotifyd-auth-helper.sh` path
 
-### Queue Toggle vs Supported URI Types
+### Honest Queue Mode Requires Scan-Scoped Target Activity
 
-The repo supports `track`, `album`, and `playlist`, but Spotify's queue API is honest only for track-like items.
-Pretending full queue support for album and playlist cards would create misleading behavior.
-
-Resolution:
-
-- persist a playback mode of either `replace` or `queue_tracks`
-- in `queue_tracks` mode, track cards call the queue path only while playback is already active on the target device
-- if the target device is idle, a track card still starts playback immediately and emits an explicit informational event
-- album and playlist cards still use the ordinary replace dispatch path
-- feedback and docs must make that limitation explicit
-
-This preserves honesty without discarding the selected queue-toggle scope.
-
-### Spotify Connect Confirmation vs Honest Playback Feedback
-
-The Spotify player API can report stale item or queue metadata even after audible playback has already moved on to the requested target device.
-Treating those stale metadata snapshots as a hard failure produces misleading logs, duplicate-gate mistakes, and a worse child-facing experience than the real device behavior.
+The updated requirements say queue mode must start playback when the jukebox target is idle or another client is active, and only queue once the jukebox target is already playing.
+Current `main` cannot guarantee that because its queue decision uses `player_active()`.
 
 Resolution:
 
-- keep exact item or context matching as the strongest confirmation when Spotify reports it in time
-- if the target device is clearly playing before the confirmation window ends, treat that as a successful start even when item or queue metadata is still stale
-- keep outright confirmation failure only for cases where playback never becomes active on the target device
+- adopt `PlaybackBackend.current_player_active()` from `fix-glitch-kilo-opus`
+- keep `player_active()` as a passive cached signal for background consumers like idle monitoring
+- use `current_player_active()` only on the scan path for queue-mode track cards
+- treat any result other than `True` as fallback to replace-style dispatch
 
-This keeps the feedback contract honest to the physical appliance behavior while acknowledging Spotify Connect propagation lag.
+### Honest Diagnostics Require Passive Status
 
-### Automatic Wi-Fi Fallback vs Ordinary Network Recovery
-
-The checked scope includes automatic Wi-Fi fallback, but EPIC 3 already established degraded network recovery for normal outages.
-If the design switched into AP mode too aggressively, it would weaken the hardened baseline.
-
-Resolution:
-
-- keep ordinary transient network loss as degraded-state recovery
-- enter setup fallback automatically only when there is no usable Wi-Fi configuration, Wi-Fi reset was explicitly requested, or boot-time connectivity does not recover within a long setup fallback grace period
-- keep the exact OS-network implementation inside a helper boundary so the Python app owns policy, not `/etc` file writing
-
-### Remote-Safe Wi-Fi Reset vs Remote Lockout
-
-EPIC 4 now includes operator-facing Wi-Fi reset and browser-based Wi-Fi replacement.
-If either path mutates the only working client configuration without a fallback-safe rollback, remote validation can strand the device and force physical recovery.
+The updated requirements now explicitly care about degraded-state visibility for receiver unavailability and Spotify throttling.
+Current `main` still burns API budget in `status()` and `player_active()`, which undermines that goal.
 
 Resolution:
 
-- whenever Wi-Fi reset or replacement starts from a known-working client configuration, the helper snapshots that configuration before changing anything
-- the helper arms a root-owned rollback timer before switching networking state
-- the rollback timer must survive loss of the Python process, the current SSH session, and ordinary client connectivity during the transition
-- only explicit success confirmation from the new setup path cancels the rollback and commits the new configuration
-- if the timeout expires first, the helper restores the prior working client configuration automatically
-- if the device reboots while a Wi-Fi trial is still pending, the helper resolves that pending state conservatively by restoring the prior working configuration unless the new configuration was already committed
+- adopt the `fix-glitch-kilo-opus` passive-status discipline
+- seed playback status once in `probe()`
+- update cached playback status and cached player activity as side effects of real operations
+- make health, idle, and operator status consumers read cached values only
+- surface `spotify_rate_limited` distinctly in health, terminal feedback, logging, and `status.json`
 
-This makes remote Wi-Fi-reset validation safe when the device begins from a known-good client network, while leaving first-time no-Wi-Fi bring-up as a separate setup-path problem.
+### Replace-Mode Confirmation Boundary
 
-### In-Scope Experiments vs Post-Standalone Review
-
-The checked D-10 items are now V1 scope, but the user still wants them reviewed again after real standalone use before V2 commits physical controls or richer feedback.
+`playback-fix-codex` preserved stronger snapshot-based confirmation logic, but the updated requirements do not require it, and the latest validation supplied by the user says replace and queue mode have not shown new issues.
 
 Resolution:
 
-- implement the selected EPIC 4 control and setup cards now
-- persist their state clearly enough to observe household usage during validation
-- keep the output docs and status JSON explicit about the current selected baseline
-- leave a post-standalone review checkpoint focused on whether any card-driven behaviors should graduate into later physical controls or richer standalone UX
+- keep exact requested item or context matching as the strongest confirmation signal
+- keep the `fix-glitch-kilo-opus` target-device-playing fallback as the default EPIC 4 runtime behavior
+- do not bundle snapshot confirmation or stop-after-track mechanics into the EPIC 4 baseline
+- preserve the probe tooling so any future replace-mode regression can be reproduced before runtime complexity is added
 
 ## Architecture
 
 ```text
-Scanned payload
+stdin / evdev
   -> Controller
        -> parse_scan_payload()
             -> SpotifyMediaCard
             -> JukeboxActionCard
-       -> if media:
-            -> duplicate gate
-            -> PlaybackModeResolver
-                 -> replace -> PlaybackBackend.dispatch()
-                 -> queue_tracks + active track -> PlaybackBackend.enqueue()
-                 -> queue_tracks + idle track -> fallback replace dispatch
-                 -> queue_tracks + album/playlist -> fallback replace dispatch
-       -> if action:
+       -> media card:
+            -> DuplicateGate
+            -> OperatorStateStore.load().playback_mode
+            -> queue_tracks + track:
+                 -> PlaybackBackend.current_player_active()
+                 -> True     -> enqueue()
+                 -> not True -> emit playback_mode_fallback -> dispatch()
+            -> queue_tracks + album/playlist:
+                 -> emit playback_mode_fallback -> dispatch()
+            -> replace:
+                 -> dispatch()
+       -> action card:
             -> ActionDebounceGate
             -> ActionRouter.execute()
-                 -> PlaybackControlAdapter.stop()
-                 -> PlaybackControlAdapter.skip_next()
-                 -> PlaybackControlAdapter.set_volume_preset()
-                 -> OperatorStateStore.set_playback_mode()
-                 -> SetupModeManager.request_wifi_reset()
-                 -> SetupModeManager.request_receiver_reauth()
-                 -> SystemHelperAdapter.request_shutdown()
+                 -> stop / next / volume
+                 -> set playback mode
+                 -> mark setup or auth required
+                 -> request shutdown
        -> ControllerEvent stream
 
 ControllerEvent stream
-  -> FeedbackStateTracker
   -> TerminalStatusSink
   -> StructuredEventLogger
+  -> FeedbackStateTracker
   -> IdleMonitor
 
 Runtime services
   -> RuntimeHealthMonitor
        -> scanner status
-       -> playback status
-       -> setup/auth mode status
+       -> passive playback status
+       -> setup mode status
   -> OperatorHttpServer
-       -> HTML setup/auth pages
-       -> JSON status endpoint
-       -> Wi-Fi setup form
-       -> receiver-auth session controls
-  -> OperatorStateStore
-       -> persisted non-secret state under /var/lib/jukebox
+       -> GET /
+       -> GET /status.json
+       -> GET/POST /wifi
+       -> GET /auth
+       -> POST /auth/start
   -> SetupModeManager
-       -> invokes privileged Wi-Fi helper scripts
-  -> ReceiverAuthCoordinator
-       -> invokes spotifyd auth helper
-  -> IdleMonitor
-       -> tracks last activity and player state
-       -> requests graceful shutdown on long idle
+       -> reads OperatorStateStore
+       -> uses wifi helper status
+       -> controls setup-required and auth-required readiness
 
-systemd
-  -> network-online.target
-  -> jukebox.service (User=pi)
-  -> helper scripts reachable through locked-down sudo rules
+SpotifyPlaybackBackend
+  -> probe() seeds passive status cache and device visibility state
+  -> dispatch():
+       -> refresh cached token if needed
+       -> resolve target device
+       -> direct play first
+       -> transfer fallback only if needed
+       -> confirm playback on configured target
+       -> update passive status + player_active cache
+  -> current_player_active():
+       -> one scan-scoped /me/player read for queue routing only
+  -> status(), player_active():
+       -> no API calls
 
-docs + scripts
-  -> pi-setup.md: developer bootstrap plus appliance setup mode and auth flow
-  -> pi-validation.md: control cards, Wi-Fi fallback, idle shutdown, and regression checks
-  -> pi-smoke.sh: query service-owned JSON status instead of duplicating probe logic
+Helper scripts
+  -> jukebox-wifi-helper.sh
+  -> jukebox-spotifyd-auth-helper.sh
+  -> jukebox-shutdown-helper.sh
+
+Diagnostics
+  -> docs/api-discipline.md
+  -> docs/spotify-connect-debug.md
+  -> scripts/spotify_connect_probe.py
 ```
 
-The controller remains the orchestration center for scan outcomes.
-EPIC 4 adds a typed action-card path, a shared feedback-state layer, an operator maintenance plane, and an idle monitor around the existing runtime rather than replacing the core playback loop.
+The controller, operator-state layer, setup-mode layer, and helper boundaries already present on `main` remain the core structure.
+The main architectural change is to bring the Spotify backend and its consumers in line with the passive-status and validated replace-versus-queue behavior from `fix-glitch-kilo-opus`.
 
 ## Runtime Flow
 
 ### Normal Boot
 
 1. `systemd` starts `jukebox.service` as `pi`.
-2. [src/jukebox/main.py](/Users/markus/Workspace/jukebox/src/jukebox/main.py) loads config, configures logging, emits `booting`, and starts the runtime services.
-3. [src/jukebox/runtime.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime.py) constructs:
-   - the input adapter
-   - the playback backend
-   - a new action router
-   - a new persistent operator-state store
-   - a new feedback-state tracker
-   - a new operator HTTP server
-   - a new setup-mode manager
-   - a new idle monitor
-   - the runtime health monitor
-4. The operator HTTP server starts before scan processing begins so the setup or status surface is available even while the runtime is recovering.
-5. The setup-mode manager checks persisted operator state and current Wi-Fi health:
-   - if Wi-Fi reset or re-auth was explicitly requested, it enters the corresponding maintenance mode
-   - if no usable Wi-Fi config exists or boot-time connectivity does not recover within `JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS`, it requests setup fallback mode
-   - otherwise it stays in ordinary client mode
-6. The health monitor polls scanner, playback, and setup or auth state.
-7. If the device is configured for ordinary client mode and playback becomes available, the runtime emits `ready`.
-8. If Wi-Fi setup or receiver re-auth is required, the runtime emits `setup_required` or `auth_required` instead of `ready`, keeps the operator surface available, and does not claim scan-readiness for ordinary playback.
+2. [src/jukebox/main.py](/Users/markus/Workspace/jukebox/src/jukebox/main.py) loads config, configures logging, emits `booting`, and calls `build_runtime()`.
+3. [src/jukebox/runtime.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime.py) builds the input adapter, playback backend, operator state store, feedback tracker, setup-mode manager, action router, idle monitor, operator server, and health monitor.
+4. `build_runtime()` immediately calls `playback_backend.probe()` before starting background services.
+5. `probe()` must:
+   - validate controller-side Spotify auth
+   - seed the passive playback status cache
+   - retry target-device lookup for a bounded startup window when the target is temporarily `device_not_listed`
+6. If controller auth fails, startup raises `StartupError` and the service fails observably.
+7. If auth succeeds but the receiver is still not visible after the bounded retry window, startup continues in degraded `receiver_unavailable` rather than failing the process.
+8. The operator server starts before normal scan processing so `/status.json` and setup/auth surfaces remain available during recovery.
+9. `SetupModeManager.initialize()` decides whether the box is in normal client mode, setup-required mode, or auth-required mode.
+10. `RuntimeHealthMonitor` emits `ready` only when scanner, playback, and setup/auth status are all ready.
 
 ### Media Card Handling
 
-1. The controller reads one newline-terminated payload from the scanner or the current input backend.
-2. `parse_scan_payload()` recognizes either:
-   - a Spotify media card under the existing strict Spotify URI rules
-   - an action card under the new `jukebox:<group>:<action>` namespace
-3. For Spotify media cards, duplicate suppression behaves the same as EPIC 3.
-4. The controller resolves the current playback mode from operator state:
-   - `replace` dispatches album and playlist cards by context URI, and dispatches track cards as single-track playback that pauses again when the scanned track finishes so playback does not fall back into an older paused context or continue into the scanned track's album
-   - `queue_tracks` enqueues `track` cards while playback is already active
-   - `queue_tracks` starts playback for `track` cards when the target player is idle and emits an explicit informational event
-   - `queue_tracks` falls back to replace dispatch for `album` and `playlist` cards and emits an explicit informational event
-5. The scanner's built-in beep remains the earliest acknowledgement, but the software still emits `scan_received`, `scan_accepted`, and playback success or failure events so the later feedback surfaces stay in sync.
-6. Successful playback or enqueue operations record duplicate state only after the backend confirms success.
-   Playback confirmation prefers the exact requested URI or context when Spotify exposes it in time, but may fall back to "target device is playing" success when Connect metadata is visibly stale.
+1. The controller receives one newline-terminated payload from `stdin` or `evdev`.
+2. `parse_scan_payload()` returns either a `SpotifyMediaCard` or a `JukeboxActionCard`.
+3. For media cards, duplicate suppression stays unchanged from earlier EPICs.
+4. The controller reads `playback_mode` from `OperatorStateStore`.
+5. In `replace` mode:
+   - track cards call `dispatch()` with the validated direct-play-first path
+   - album and playlist cards call `dispatch()` with context playback
+6. In `queue_tracks` mode:
+   - track cards call `current_player_active()`
+   - if that returns `True`, the controller calls `enqueue()`
+   - if that returns `False` or `None`, the controller emits `playback_mode_fallback` and calls `dispatch()` instead
+   - album and playlist cards always emit `playback_mode_fallback` and use `dispatch()`
+7. Track-card dispatch uses the `fix-glitch-kilo-opus` replace-mode semantics:
+   - `{"uris": [track]}` payload for track starts
+   - direct `/play?device_id=...` first
+   - explicit transfer fallback only when direct play fails
+8. Playback confirmation behavior is:
+   - exact requested item or context match when Spotify reports it in time
+   - otherwise success only when the configured jukebox target is playing
+   - never treat playback on another client as success
+9. Successful playback or enqueue operations update duplicate state only after backend confirmation succeeds.
 
 ### Action Card Handling
 
-1. The parser returns a typed action-card intent rather than rejecting the payload as malformed.
-2. The controller routes that intent to an action debounce gate so one physical scan does not accidentally double-trigger stop, shutdown, or setup actions.
-3. The action router executes one of these EPIC 4 actions:
+1. Action cards continue through `ActionDebounceGate` and `ActionRouter`.
+2. `ActionRouter` remains the single Python boundary for:
    - `playback.stop`
    - `playback.next`
    - `mode.replace`
@@ -308,386 +289,254 @@ EPIC 4 adds a typed action-card path, a shared feedback-state layer, an operator
    - `setup.wifi-reset`
    - `setup.receiver-reauth`
    - `system.shutdown`
-4. Child-facing actions are playback or mode actions. Operator-facing actions are setup and shutdown actions.
-5. Unknown or not-yet-implemented `jukebox:` actions produce a distinct unsupported-action outcome rather than silently doing nothing.
+3. Child-facing actions remain playback and mode actions.
+4. Operator-facing actions remain setup and shutdown actions.
+5. Unsupported or disabled `jukebox:` actions must fail as distinct `unsupported_action` outcomes.
 
-### Action Semantics
+### Setup, Auth, and Operator Surface
 
-- `playback.stop`
-  Stops current playback. On Spotify this is implemented as a pause request on the resolved target device, because the Web API exposes pause semantics rather than a true stop primitive.
-- `playback.next`
-  Calls the Spotify next-track endpoint on the active target device. If there is no active playback context, the action fails with a specific reason instead of pretending success.
-- `mode.replace`
-  Persists the default EPIC 3 replace behavior in operator state. Subsequent music-card scans use ordinary replacement semantics.
-- `mode.queue`
-  Persists `queue_tracks` in operator state. Subsequent track-card scans queue while playback is already active, but still start playback if the target device is idle. Album and playlist scans still replace and emit an explicit fallback message.
-- `volume.low`, `volume.medium`, `volume.high`
-  Map to configured Spotify volume percentages. Failure is explicit if the target device is missing or software volume is unsupported.
-- `setup.wifi-reset`
-  Persists a setup-mode request, asks the helper to snapshot the prior working client configuration when one exists, clears the active client configuration, enters setup fallback mode, and arms a rollback timer that restores the prior working configuration if setup does not complete in time.
-- `setup.receiver-reauth`
-  Persists an auth-required request, marks the operator surface to present the receiver-auth flow prominently, and allows the companion UI to run the wrapped `spotifyd authenticate` sequence without shell access.
-- `system.shutdown`
-  Emits a shutdown-requested event, stops playback if needed, and invokes a privileged shutdown helper for a graceful OS shutdown.
+1. `OperatorHttpServer` remains a lightweight standard-library server.
+2. It continues to expose:
+   - browser-readable operator landing page
+   - `GET /status.json`
+   - `GET` and `POST /wifi`
+   - `GET /auth`
+   - `POST /auth/start`
+3. The JSON status surface remains the source of truth for:
+   - `feedback`
+   - runtime playback mode
+   - setup-required and auth-required flags
+   - enabled action ids
+   - scanner, playback, setup, and idle status
+   - non-secret maintenance config
+4. Receiver auth remains implemented through the existing helper boundary, but the helper script must be completed so `POST /auth/start` returns a real approval flow rather than the current stub failure.
+5. Wi-Fi replacement remains implemented through the existing helper boundary:
+   - the operator server submits SSID and passphrase to `CommandSystemHelpers.apply_wifi()`
+   - the Wi-Fi helper snapshots the previous working client connection when one exists
+   - the helper arms a rollback timer that survives Python-process exit and ordinary client connectivity loss
+   - if setup is not confirmed in time or the device reboots with a pending trial, the helper restores the prior working client configuration automatically
 
-### Setup and Companion Interface Flow
+### Idle and Health Monitoring
 
-1. When the device enters setup or auth-required mode, the operator HTTP surface becomes the primary maintenance entrypoint.
-2. The status page exposes:
-   - the current runtime feedback state
-   - playback mode
-   - whether setup fallback or auth-required mode is active
-   - the currently enabled action-card set
-   - the idle-shutdown timer status
-3. The Wi-Fi setup page collects the minimum client credentials needed to join the normal home network path.
-4. The Python service sends those credentials to a privileged Wi-Fi helper rather than writing system files directly itself.
-5. If a working client configuration already exists, the helper snapshots it, arms a rollback timer through a root-owned detached path such as a transient `systemd` unit, and only then applies the replacement client configuration.
-6. Once the new client path is confirmed, the helper commits the new configuration and cancels the rollback timer.
-7. If setup AP recovery or the replacement client path is not confirmed before the timeout, the helper restores the prior working client configuration automatically.
-8. Once Wi-Fi is configured and client mode is restored, the same companion interface offers receiver-auth or re-auth actions.
-9. Receiver auth uses a helper that wraps `spotifyd authenticate` on the Pi against the real configured cache path, surfaces the approval URL in the browser UI, and reports session status back to the operator page.
-10. After auth succeeds, the helper restarts `spotifyd.service`, and the runtime health monitor waits for the receiver to become visible before returning to `ready`.
-
-### Automatic Wi-Fi Fallback Flow
-
-1. On boot, the setup-mode manager checks whether Wi-Fi setup is already requested or whether a usable client Wi-Fi configuration exists.
-2. If Wi-Fi is explicitly reset and a prior working client configuration exists, the helper starts the setup AP immediately and leaves a rollback timer armed until setup completes or times out.
-3. If Wi-Fi is explicitly reset and no prior working client configuration exists, the helper starts the setup AP immediately without rollback guarantees.
-4. If a normal client configuration exists but network reachability does not recover within the configured fallback grace period during boot, the helper can switch the device into setup AP mode automatically.
-5. Once the setup AP is active, the operator server remains reachable there and the runtime emits `setup_required` instead of `network_unavailable`.
-6. Ordinary runtime outages after the device had already reached `ready` stay in degraded recovery unless the operator later requests a Wi-Fi reset.
-
-### Idle Monitor Flow
-
-1. A new idle monitor consumes controller events and polls the playback backend for current player activity.
-2. It records the last meaningful household activity timestamp from:
-   - successful media dispatch or enqueue
-   - accepted action cards other than shutdown
-   - explicit playback or mode changes
-3. When `JUKEBOX_IDLE_SHUTDOWN_SECONDS` elapses with no active playback and no recent activity, the idle monitor emits `auto_shutdown_requested`.
-4. The shutdown coordinator then requests the same graceful helper path used by the shutdown card.
-5. If playback is active, player state is unknown, or setup or auth mode is active, the idle timer does not trigger shutdown.
-
-### Shared Feedback Flow
-
-1. A new feedback-state tracker consumes the same controller and health events already emitted by the runtime.
-2. That tracker maintains one current user-facing state snapshot for:
-   - terminal output
-   - structured logs
-   - the operator HTML page
-   - the JSON status endpoint
-3. The tracker does not attempt to control the scanner beep itself; it only models the software-visible states that follow the beep.
-4. If a future LED adapter is added, it will subscribe to the same feedback snapshot instead of building a second state machine.
+1. `IdleMonitor` continues to derive household activity from controller events and remain disabled during `setup_required` and `auth_required`.
+2. `IdleMonitor` must use passive `player_active()` only.
+3. `RuntimeHealthMonitor` must read passive playback status only and never trigger Spotify API calls indirectly.
+4. Health priority must treat `spotify_rate_limited` as a degraded state distinct from generic network failure.
 
 ## Module Plan
 
-The implementation should stay close to the current package layout and add only the minimum new surfaces needed for EPIC 4.
-
 ### Existing Files to Extend
 
-- [src/jukebox/main.py](/Users/markus/Workspace/jukebox/src/jukebox/main.py)
-  Purpose: start and stop the operator HTTP server, feedback-state tracker, and idle monitor alongside the health monitor.
-- [src/jukebox/runtime.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime.py)
-  Purpose: assemble the action router, operator-state store, setup-mode manager, idle monitor, and operator server in addition to the current scanner and playback dependencies.
-- [src/jukebox/runtime_health.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime_health.py)
-  Purpose: add `setup_required` and `auth_required` as blocking not-ready states and allow a third status source for setup/auth health.
-- [src/jukebox/config.py](/Users/markus/Workspace/jukebox/src/jukebox/config.py)
-  Purpose: validate operator HTTP settings, helper command paths, volume presets, idle-shutdown settings, and setup fallback settings.
-- [src/jukebox/core/controller.py](/Users/markus/Workspace/jukebox/src/jukebox/core/controller.py)
-  Purpose: route parsed payloads into media playback or action-card execution and honor persisted playback mode.
-- [src/jukebox/core/parser.py](/Users/markus/Workspace/jukebox/src/jukebox/core/parser.py)
-  Purpose: parse both Spotify media cards and `jukebox:` action cards.
-- [src/jukebox/core/models.py](/Users/markus/Workspace/jukebox/src/jukebox/core/models.py)
-  Purpose: add typed action-card, action-result, playback-mode, player-state, and feedback-state models.
-- [src/jukebox/adapters/feedback.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/feedback.py)
-  Purpose: render new action, setup, auth, and shutdown events and expose a shared feedback snapshot.
 - [src/jukebox/adapters/playback_spotify.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/playback_spotify.py)
-  Purpose: add queue, pause-based stop, next-track, volume preset, and player-state support while keeping that behavior separate from ordinary playback dispatch.
+  Purpose: adopt direct-play-first handoff, single-URI track starts, cached tokens, passive `status()` and `player_active()`, scan-scoped `current_player_active()`, bounded startup device retries, and explicit `spotify_rate_limited` handling.
+- [src/jukebox/core/models.py](/Users/markus/Workspace/jukebox/src/jukebox/core/models.py)
+  Purpose: formalize `status()` and `current_player_active()` on the `PlaybackBackend` protocol and keep `PlaybackRequest` free of branch-only `stop_after_track` behavior.
+- [src/jukebox/core/controller.py](/Users/markus/Workspace/jukebox/src/jukebox/core/controller.py)
+  Purpose: use `current_player_active()` for queue-mode track routing and treat any result other than `True` as fallback to `dispatch()`.
+- [src/jukebox/config.py](/Users/markus/Workspace/jukebox/src/jukebox/config.py)
+  Purpose: add bounded device-probe retry settings and adopt the longer health poll default used by the passive-status design.
+- [src/jukebox/runtime.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime.py)
+  Purpose: call `probe()` during startup, pass the new retry settings into the backend, and keep the runtime status JSON built from passive sources.
+- [src/jukebox/runtime_health.py](/Users/markus/Workspace/jukebox/src/jukebox/runtime_health.py)
+  Purpose: add `spotify_rate_limited` to the degraded-state priority ladder.
+- [src/jukebox/adapters/feedback.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/feedback.py)
+  Purpose: render a distinct terminal line for rate limiting and keep ready/degraded signals honest.
+- [src/jukebox/logging.py](/Users/markus/Workspace/jukebox/src/jukebox/logging.py)
+  Purpose: log degraded runtime events at warning level and include `spotify_rate_limited`.
 - [src/jukebox/adapters/playback_stub.py](/Users/markus/Workspace/jukebox/src/jukebox/adapters/playback_stub.py)
-  Purpose: satisfy the new playback-control contract in local development and tests.
-- [systemd/jukebox.env.example](/Users/markus/Workspace/jukebox/systemd/jukebox.env.example)
-  Purpose: document the operator HTTP port, operator-state path, setup AP settings, volume presets, idle-shutdown timer, and helper command paths.
-- [systemd/jukebox.service](/Users/markus/Workspace/jukebox/systemd/jukebox.service)
-  Purpose: keep the service as `pi` while documenting the helper boundaries used for Wi-Fi setup, auth, and shutdown.
-- [scripts/pi-bootstrap.sh](/Users/markus/Workspace/jukebox/scripts/pi-bootstrap.sh)
-  Purpose: install any extra Pi-side packages required for setup fallback and seed the operator-state path and helper installation points.
-- [scripts/pi-smoke.sh](/Users/markus/Workspace/jukebox/scripts/pi-smoke.sh)
-  Purpose: query the new status JSON surface instead of duplicating Spotify visibility logic inline and add a control-card replay path.
-- [docs/pi-setup.md](/Users/markus/Workspace/jukebox/docs/pi-setup.md)
-  Purpose: document setup AP behavior, Wi-Fi fallback, receiver auth or re-auth through the companion flow, and operator-only cards.
-- [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md)
-  Purpose: add manual checks for the selected control cards, setup AP fallback, idle shutdown, operator status JSON, and the setup/auth flow.
-- [README.md](/Users/markus/Workspace/jukebox/README.md)
-  Purpose: update the repo overview for the operator surface and selected EPIC 4 control baseline.
+  Purpose: satisfy the extended playback protocol without introducing Spotify-specific behavior.
+- [tests/test_playback_spotify.py](/Users/markus/Workspace/jukebox/tests/test_playback_spotify.py)
+  Purpose: carry forward the validated `fix-glitch-kilo-opus` behavior around direct play, token caching, passive status, current-player checks, bounded probe retries, and 429 handling.
+- [tests/test_controller.py](/Users/markus/Workspace/jukebox/tests/test_controller.py)
+  Purpose: lock in the queue-mode routing rule that only `True` means "already active on the jukebox target."
+- [tests/test_runtime_health.py](/Users/markus/Workspace/jukebox/tests/test_runtime_health.py), [tests/test_feedback.py](/Users/markus/Workspace/jukebox/tests/test_feedback.py), and [tests/test_logging.py](/Users/markus/Workspace/jukebox/tests/test_logging.py)
+  Purpose: lock in `spotify_rate_limited` as a first-class degraded state.
+- [README.md](/Users/markus/Workspace/jukebox/README.md), [docs/pi-setup.md](/Users/markus/Workspace/jukebox/docs/pi-setup.md), [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md), and [systemd/jukebox.env.example](/Users/markus/Workspace/jukebox/systemd/jukebox.env.example)
+  Purpose: align the operator workflow, playback expectations, probe settings, and troubleshooting guidance to the selected runtime behavior.
+- [scripts/runtime/jukebox-spotifyd-auth-helper.sh](/Users/markus/Workspace/jukebox/scripts/runtime/jukebox-spotifyd-auth-helper.sh)
+  Purpose: replace the current placeholder with a real wrapped `spotifyd authenticate` flow that fits the operator server contract.
 
-### New Python Modules
+### Files to Add
 
-- `src/jukebox/core/cards.py`
-  Purpose: hold the typed media-card and action-card intent models plus the `jukebox:` namespace helpers.
-- `src/jukebox/adapters/action_router.py`
-  Purpose: map parsed action-card intents to concrete runtime actions such as stop, queue mode, Wi-Fi reset, receiver re-auth, and shutdown.
-- `src/jukebox/operator_state.py`
-  Purpose: load and persist non-secret operator state such as playback mode, setup flags, and last known Wi-Fi mode.
-- `src/jukebox/operator_server.py`
-  Purpose: serve the minimal HTML setup/auth pages and the JSON status endpoint using the standard library HTTP server.
-- `src/jukebox/receiver_auth.py`
-  Purpose: coordinate browser-visible receiver-auth sessions around the wrapped `spotifyd authenticate` helper.
-- `src/jukebox/adapters/system_helpers.py`
-  Purpose: invoke the privileged Wi-Fi, receiver-auth, and shutdown helper commands through a narrow adapter boundary.
-- `src/jukebox/feedback_state.py`
-  Purpose: maintain the current user-facing feedback snapshot that both the terminal sink and operator server can read.
-- `src/jukebox/idle_monitor.py`
-  Purpose: track household activity, query player state, and request graceful shutdown after long idle.
+- `docs/api-discipline.md`
+  Purpose: carry forward the API-call-budget rules from `fix-glitch-kilo-opus`.
+- `docs/spotify-connect-debug.md`
+  Purpose: carry forward the probe-first debugging runbook from `playback-fix-codex`, updated for the selected EPIC 4 baseline.
+- `scripts/spotify_connect_probe.py`
+  Purpose: carry forward the Spotify handoff probe script from `playback-fix-codex`, updated to reflect direct-play-first and the selected payload policy.
 
-### New Non-Python Files
-
-- `scripts/runtime/jukebox-wifi-helper.sh`
-  Purpose: apply Wi-Fi client credentials and explicit Wi-Fi reset through a rollback-safe trial path, snapshot and restore the prior working configuration when one exists, and switch between client mode and setup AP mode on the Pi.
-- `scripts/runtime/jukebox-spotifyd-auth-helper.sh`
-  Purpose: wrap `spotifyd authenticate`, surface the approval URL, and restart `spotifyd.service` after credentials land in the configured cache path.
-- `scripts/runtime/jukebox-shutdown-helper.sh`
-  Purpose: request an orderly system shutdown for both the shutdown card and the idle monitor path.
-- `sudoers/jukebox-maintenance`
-  Purpose: allow the `pi` user to run only the runtime helper scripts and the minimum related service commands without granting broad root access.
+No new Python architecture layer is required for auth or diagnostics beyond those additions.
 
 ## Data Model
 
-### Parsed Card Intents
+### Parsed Cards
 
-EPIC 4 replaces the one-type parser result with an explicit two-branch model:
+The current parsed-card model on `main` already matches EPIC 4:
 
 - `SpotifyMediaCard`
   Fields: `raw`, `kind`, `spotify_id`
 - `JukeboxActionCard`
   Fields: `raw`, `group`, `action`, `action_id`
 
-The parser rules are:
+The action-card namespace remains `jukebox:<group>:<action>`.
 
-- `spotify:(track|album|playlist):<id>` remains the strict media-card format
-- `jukebox:<group>:<action>` becomes the action-card format
-- unsupported `jukebox:` actions parse successfully as action cards and are rejected later by the action registry with a specific unsupported-action failure
+### Playback Request and Backend Contract
 
-### Playback Mode State
+`PlaybackRequest` remains intentionally small:
 
-Persisted operator state carries:
+- `uri`
 
-- `replace`
-- `queue_tracks`
+EPIC 4 does not add `stop_after_track`.
 
-Default is `replace`.
-This lives outside the media-card payload model so ordinary music cards remain unchanged.
+The playback backend contract becomes:
 
-### Action Definitions
-
-The action router uses an explicit registry.
-Each definition includes:
-
-- action id
-- payload triplet
-- whether it is child-facing or operator-only
-- whether it affects playback, setup mode, system power, or persisted operator state
-- whether it should be debounced
-
-The registry shape is intentionally extensible so the post-roadmap experiments can be reviewed later without changing the parser contract.
+- `probe()`
+- `status()`
+- `dispatch()`
+- `enqueue()`
+- `stop()`
+- `skip_next()`
+- `set_volume_percent()`
+- `player_active()` for passive background reads
+- `current_player_active()` for scan-scoped queue routing
 
 ### Operator State
 
-Persisted non-secret state lives in one JSON file under `/var/lib/jukebox`.
-It contains:
+The persisted operator state on `main` remains the correct baseline:
 
-- schema version
-- current playback mode
-- whether setup mode was explicitly requested
-- whether receiver re-auth was explicitly requested
-- last known Wi-Fi mode from the app's point of view
-- which action-card actions are enabled
-- idle-shutdown enabled flag if later needed
+- `playback_mode`
+- `setup_requested`
+- `receiver_reauth_requested`
+- `last_wifi_mode`
+- `enabled_actions`
+- `schema_version`
 
-Secrets do not live there.
-Wi-Fi passphrases stay in the OS network configuration managed by the helper, and receiver credentials stay in the `spotifyd` cache path.
+No secrets belong in that JSON file.
 
 ### Feedback Snapshot
 
-The feedback-state tracker keeps one in-memory snapshot with:
+The shared feedback snapshot remains the current repo design, with one addition:
 
-- current display state such as `booting`, `setup_required`, `auth_required`, `ready`, `scan_acknowledged`, `playback_started`, `playback_failed`, `action_succeeded`, `action_failed`, `shutdown_requested`, or `auto_shutdown_requested`
-- last transition timestamp
-- current reason code if degraded
-- current device name when available
-- current playback mode
-- last card action metadata for the operator page
-
-The operator JSON endpoint serializes a redacted version of this snapshot.
+- support explicit `spotify_rate_limited` display state alongside `ready`, `setup_required`, `auth_required`, `receiver_unavailable`, and `network_unavailable`
 
 ## Configuration Design
 
-The existing env-file model remains the runtime baseline.
-EPIC 4 adds a small number of app-level settings:
+EPIC 4 keeps the current env-file model and helper-command boundaries.
+The main additions are the validated Spotify probe settings:
 
-- `JUKEBOX_OPERATOR_HTTP_BIND`
-  Default: `127.0.0.1` for local development; set to `0.0.0.0` in the Pi env file.
-- `JUKEBOX_OPERATOR_HTTP_PORT`
-  Default: `8080`
-- `JUKEBOX_OPERATOR_STATE_PATH`
-  Default: `/var/lib/jukebox/state.json`
-- `JUKEBOX_CONTROL_DEBOUNCE_SECONDS`
-  Default: `1.0`
-- `JUKEBOX_PLAYBACK_MODE_DEFAULT`
-  Default: `replace`
-- `JUKEBOX_VOLUME_PRESET_LOW_PERCENT`
-  Default: `35`
-- `JUKEBOX_VOLUME_PRESET_MEDIUM_PERCENT`
-  Default: `55`
-- `JUKEBOX_VOLUME_PRESET_HIGH_PERCENT`
-  Default: `75`
-- `JUKEBOX_IDLE_SHUTDOWN_SECONDS`
-  Default: disabled in local development; explicitly set in the Pi env file
-- `JUKEBOX_SETUP_AP_SSID`
-  Default: none for local development; required in the Pi env file when setup fallback is enabled
-- `JUKEBOX_SETUP_AP_PASSPHRASE`
-  Default: none
-- `JUKEBOX_SETUP_FALLBACK_GRACE_SECONDS`
-  Default: `120`
-- `JUKEBOX_WIFI_ROLLBACK_TIMEOUT_SECONDS`
-  Default: `120`
-- `JUKEBOX_WIFI_HELPER_COMMAND`
-  Default install target: `/usr/local/libexec/jukebox-wifi-helper`
-- `JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND`
-  Default install target: `/usr/local/libexec/jukebox-spotifyd-auth-helper`
-- `JUKEBOX_SHUTDOWN_HELPER_COMMAND`
-  Default install target: `/usr/local/libexec/jukebox-shutdown-helper`
+- `JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT`
+  Default: `5`
+- `JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS`
+  Default: `2.0`
+
+Existing settings remain in place for:
+
+- confirmation timeout and poll interval
+- operator HTTP bind and port
+- operator-state path
+- control debounce
+- playback-mode default
+- volume preset percentages
+- idle shutdown
+- setup AP configuration
+- Wi-Fi rollback timeout
+- helper command paths
 
 Design notes:
 
-- keeping helper command paths configurable makes tests easy without touching the host system
-- the setup AP settings live in env because they are deployment-specific appliance config, not repo content
-- the Wi-Fi rollback timeout lives in env so deployments can tune how long remote setup attempts are allowed before the previous client network is restored
-- the operator-state JSON must never include Spotify client secrets, refresh tokens, Wi-Fi passwords, or raw receiver credential files
-- idle shutdown should be explicitly disabled by default on non-Pi local runs so development sessions do not self-terminate unexpectedly
+- `JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS` should move from the current `5.0` default to `15.0` to match the passive-status design and avoid unnecessary churn.
+- Background poll interval tuning no longer carries Spotify API risk once playback status is passive, but the slower default keeps logs and state churn calmer on a Pi 3.
+- No setting is added for snapshot confirmation or stop-after-track because those are not baseline EPIC 4 behavior.
 
 ## Feedback and Logging Design
 
-`ControllerEvent` remains the canonical event bus, but EPIC 4 adds new event codes:
+`ControllerEvent` remains the canonical event bus.
+The key runtime additions are not new event families, but sharper degraded-state rendering:
 
-- `setup_required`
-- `auth_required`
-- `action_card_accepted`
-- `action_succeeded`
-- `action_failed`
-- `playback_mode_changed`
-- `volume_preset_applied`
-- `shutdown_requested`
-- `auto_shutdown_requested`
+- `spotify_rate_limited` must render distinctly in terminal feedback
+- degraded events must be logged at warning level, not informational level
+- `status.json` must expose `runtime.playback.code = spotify_rate_limited` when relevant
 
-Terminal rendering expands accordingly:
+The selected operator and diagnostic surfaces become:
 
-- setup and auth-required modes become visible not-ready states
-- queue-mode fallback from album or playlist to replace behavior becomes a distinct informative line
-- queue-mode fallback from idle track scan to immediate playback becomes a distinct informative line
-- shutdown and Wi-Fi reset become observable setup or system actions before the state transition occurs
-
-Structured logs should add these fields when present:
-
-- `card_kind`
-- `action_name`
-- `action_scope`
-- `playback_mode`
-- `setup_mode`
-- `feedback_state`
-
-The operator JSON status endpoint should expose:
-
-- the current feedback snapshot
-- scanner and playback readiness summary
-- whether setup or auth-required mode is active
-- the current playback mode
-- the currently enabled action-card actions
-- the non-secret runtime config relevant to maintenance
-- idle-shutdown timer status
-
-This is the JSON surface that [scripts/pi-smoke.sh](/Users/markus/Workspace/jukebox/scripts/pi-smoke.sh) should consume instead of re-implementing the health probe inline.
+- terminal feedback for immediate operator visibility
+- structured JSON logs for diagnosis
+- `GET /status.json` for service-owned runtime state
+- `docs/api-discipline.md` for design guardrails
+- `docs/spotify-connect-debug.md` plus `scripts/spotify_connect_probe.py` for investigation when Spotify UI state and device behavior diverge
 
 ## Testing Strategy
 
-The current test layout is already suitable for EPIC 4 if extended carefully.
-
 ### Unit Tests
 
-- extend [tests/test_parser.py](/Users/markus/Workspace/jukebox/tests/test_parser.py) for `jukebox:` action-card parsing and unsupported-action handling
-- extend [tests/test_controller.py](/Users/markus/Workspace/jukebox/tests/test_controller.py) for stop cards, next cards, queue-mode behavior, volume preset cards, Wi-Fi reset cards, receiver re-auth cards, shutdown cards, and duplicate handling across media versus actions
-- extend [tests/test_feedback.py](/Users/markus/Workspace/jukebox/tests/test_feedback.py) for setup mode, auth-required mode, action rendering, and idle-shutdown rendering
-- extend [tests/test_config.py](/Users/markus/Workspace/jukebox/tests/test_config.py) for the new operator HTTP, helper, setup AP, volume preset, and idle-shutdown settings
-- extend [tests/test_main.py](/Users/markus/Workspace/jukebox/tests/test_main.py) so the operator server and idle monitor lifecycle are exercised alongside the health monitor
-- extend [tests/test_playback_spotify.py](/Users/markus/Workspace/jukebox/tests/test_playback_spotify.py) for pause, next-track, queue-track, volume, and player-state behavior
-- extend [tests/test_runtime_health.py](/Users/markus/Workspace/jukebox/tests/test_runtime_health.py) for `setup_required` and `auth_required`
-- add `tests/test_operator_state.py` for JSON persistence and redaction behavior
-- add `tests/test_operator_server.py` for HTML and JSON routes without touching real sockets or helpers
-- add `tests/test_action_router.py` for action routing, debounce handling, playback-mode persistence, and helper failure mapping
-- add `tests/test_idle_monitor.py` for idle timing and no-shutdown-while-playing behavior
+- carry forward the `fix-glitch-kilo-opus` Spotify backend tests for:
+  - token caching
+  - passive `status()`
+  - passive `player_active()`
+  - scan-scoped `current_player_active()`
+  - direct-play-first with transfer fallback
+  - single-URI track starts
+  - bounded probe retries
+  - `spotify_rate_limited` plus `Retry-After` rendering
+- update controller tests so queue-mode routing only enqueues on `current_player_active() is True`
+- update runtime-health, feedback, and logging tests to cover `spotify_rate_limited`
+- extend runtime tests to cover startup `probe()` seeding and the new retry settings
+- keep operator-server, setup-mode, idle-monitor, and action-router tests as the current scaffold; they already match the selected architecture
 
 ### Script and Integration Tests
 
-- update [scripts/pi-smoke.sh](/Users/markus/Workspace/jukebox/scripts/pi-smoke.sh) so it validates the service-owned JSON status surface and still supports the stdin replay path
-- keep the one-shot stdin replay for media cards
-- add a second smoke mode for action-card payload replay using `JUKEBOX_INPUT_BACKEND=stdin`
-- add a smoke assertion that the JSON status surface reports setup or auth-required mode distinctly from `ready`
-- add helper-level coverage for rollback-safe Wi-Fi reset and replacement when a previous working client configuration exists
+- update `scripts/pi-smoke.sh` expectations around the service-owned `status.json` surface and degraded playback codes
+- add repository coverage for `scripts/spotify_connect_probe.py`
+- keep the existing helper-script tests and extend them only as needed for the completed auth helper
 
 ### Manual Pi Validation
 
-EPIC 4 manual validation must add:
+Manual Pi validation should now treat replace and queue mode as the primary playback regression matrix because those paths have the strongest recent validation:
 
-- real stop-card validation during playback
-- next-track validation during active playback
-- queue-mode validation for a track card and explicit fallback validation for album or playlist cards
-- volume preset card validation against the mono amp-and-speaker baseline
-- shutdown-card validation
-- Wi-Fi reset validation into setup fallback mode
-- remote-safe Wi-Fi reset validation that confirms the prior working client network is restored automatically if setup is not completed before the rollback timeout
-- receiver re-auth card validation into the browser auth flow
-- automatic setup AP fallback validation on a device with no usable Wi-Fi config
-- idle auto-shutdown validation with documented recovery
-- operator setup UI validation from another device
-- JSON status endpoint validation for redacted config, current playback mode, and current action-card state
+- replace-mode track starts after stale context elsewhere
+- queue-mode first scan while another client is active
+- queue-mode later scans during active jukebox playback
+- bounded startup receiver visibility recovery after boot
+- degraded recovery and `spotify_rate_limited` visibility
 
-Because EPIC 4 explicitly touches networking, the full temporary network interruption test from [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md) must be rerun.
+The stale stop-after-track expectation currently present in `docs/pi-validation.md` should be removed as part of this alignment work.
 
 ## Failure Handling
 
-- Unknown `jukebox:` actions return `action_failed` with a reason such as `unsupported_action` instead of falling through as malformed Spotify URIs.
-- Action cards pass through a debounce gate so one physical scan does not double-execute setup or shutdown behavior.
-- Stop-card execution on a missing receiver returns the same underlying receiver or network reason codes already used by the Spotify backend.
-- Next-track execution with no active playback context returns an explicit failure such as `no_active_playback`.
-- Queue mode on album or playlist cards emits a specific informational fallback event and still uses replace dispatch.
-- Queue mode on track cards still starts playback immediately when the player is idle, and emits a specific informational fallback event instead of silently queueing against an idle device.
-- Volume preset failure returns a distinct reason such as `volume_control_unavailable` or `device_not_listed`.
-- If the Wi-Fi helper is missing or exits nonzero, the action router surfaces a specific setup-action failure and leaves the device in its prior mode.
-- If a rollback-safe Wi-Fi trial times out before setup AP recovery or new client connectivity is confirmed, the helper restores the prior working client configuration automatically.
-- If the device reboots while a Wi-Fi rollback timer is pending, the helper resolves that state conservatively by restoring the prior working client configuration unless the new configuration was already committed.
-- If the shutdown helper fails, the runtime emits `action_failed` and continues in its prior state.
-- If the operator-state JSON is missing or corrupt, the app recreates it from defaults, logs a reset event, and continues.
-- If the `spotifyd` auth helper fails, the operator UI shows retryable failure state while the runtime remains in `auth_required` until recovery succeeds.
-- If the operator HTTP server cannot bind its port, startup should fail in production mode because the companion interface is a selected EPIC 4 requirement.
-- If player activity cannot be determined reliably, the idle monitor must fail safe by not auto-shutting down.
+- If controller-side Spotify auth fails during startup `probe()`, startup fails observably with `controller_auth_unavailable`.
+- If the receiver is not yet visible during startup, the backend seeds `receiver_unavailable` and the process still starts.
+- If the startup retry window expires without receiver visibility, the runtime remains degraded until a later successful user action or recovery.
+- If `current_player_active()` cannot prove the jukebox target is already active, queue mode falls back to `dispatch()` instead of silently enqueuing.
+- If Spotify returns HTTP 429, the runtime maps it to `spotify_rate_limited`, logs at warning level, and does not hide it under generic network failure.
+- If `Retry-After` is present, surface it in the message; do not build automatic background recovery polling around it.
+- If exact playback metadata stays stale but the configured target device is clearly playing, the selected EPIC 4 baseline still treats that as success.
+- If future validation demonstrates that this permissive confirmation is wrong on the merge target, diagnose it with the probe tooling before adding snapshot or completion-time runtime complexity.
+- If a Wi-Fi replacement or reset trial times out before the new path is confirmed, the existing Wi-Fi helper restores the prior working client configuration automatically.
+- If the device reboots while a Wi-Fi trial is still pending, the helper resolves that conservatively by restoring the prior working client configuration unless the new configuration was already committed.
+- If the auth helper remains stubbed or fails, the operator surface remains in `auth_required` and the appliance does not claim `ready`.
 
 ## Implementation Sequence
 
-1. Introduce the new parsed-card model and generalize the controller for media versus action routing.
-2. Extend the playback backend contract for stop, next, queue-track, volume preset, and player-state operations.
-3. Implement the action router, action debounce gate, and persisted playback mode.
-4. Add the feedback-state tracker and update terminal rendering and structured logs for setup, auth, action, and shutdown events.
-5. Add the operator-state store plus the JSON status endpoint, then switch `pi-smoke.sh` to consume it.
-6. Add the browser-based operator pages and the wrapped `spotifyd authenticate` flow.
-7. Add Wi-Fi setup and reset helper integration, automatic setup fallback policy, and setup-required runtime state.
-8. Add the idle monitor plus graceful shutdown helper integration.
-9. Update the Pi docs, env example, service unit, helper installation, and validation flow.
-10. After the polished standalone baseline is validated on the real appliance, run the post-standalone review checkpoint against the selected EPIC 4 control and feedback experiments before deciding any V2 physical-control or richer-feedback follow-up.
+1. Update the playback backend contract and carry forward the `fix-glitch-kilo-opus` Spotify runtime changes into `main`.
+2. Update controller queue-mode routing to use `current_player_active()` and fallback on any non-`True` result.
+3. Wire the new probe retry settings through config and runtime startup.
+4. Update runtime health, terminal feedback, and structured logging for `spotify_rate_limited`.
+5. Carry forward `docs/api-discipline.md`.
+6. Carry forward `docs/spotify-connect-debug.md` and `scripts/spotify_connect_probe.py`, adapted to the selected EPIC 4 baseline.
+7. Complete the `spotifyd` auth helper so the existing operator-server contract becomes a real standalone flow.
+8. Align Pi setup, validation, and env-template docs to the new behavior contract.
+
+## Implementation Progress
+
+- [x] Batch 1: playback backend contract, passive status caching, queue-mode routing, and playback tests
+- [x] Batch 2: auth helper, operator auth surface, and auth-path tests
+- [x] Batch 3: runtime startup probing, config wiring, and degraded observability updates
+- [x] Batch 4: diagnostics tooling, docs alignment, and smoke-test updates
 
 ## Open Risks
 
-- The setup AP implementation depends on the exact network stack present on the supported Raspberry Pi OS image. The helper boundary keeps that uncertainty contained, but the real image must be verified during implementation.
-- `spotifyd authenticate` is an external CLI contract. Wrapping it is less risky than reimplementing receiver credentials, but it still needs a real Pi validation pass.
-- Spotify software volume support may behave differently across receiver versions or output paths. Failure handling must stay honest so the mono amp-and-speaker path remains the reliable baseline.
-- Queue mode is intentionally limited to track cards. That is the right V1 compromise, but it may still need real-world explanation during the post-standalone review.
-- Action cards such as Wi-Fi reset and shutdown are powerful. The design therefore treats them as explicit operator-only cards, debounces them, and keeps physical-control follow-up out of EPIC 4.
-- Idle shutdown depends on correctly observing whether playback is still active. The design must fail safe toward staying on if that signal is uncertain.
+- The exact startup retry window may need tuning on real Pi hardware and Spotify-side propagation timing.
+- The selected confirmation fallback remains more permissive than `playback-fix-codex` snapshot confirmation. That is acceptable for EPIC 4 only because recent replace and queue validation has not surfaced new issues.
+- Queue mode remains intentionally limited to track cards. That is the right EPIC 4 compromise, but it still needs explicit documentation and validation coverage.
+- The current auth helper is still incomplete. That is now the main gap in the standalone maintenance surface.
+- Diagnostic tooling is only useful if it stays in the active branch. Once restored, it should be treated as part of the supported troubleshooting workflow, not as disposable branch-local debugging residue.

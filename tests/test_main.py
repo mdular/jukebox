@@ -219,12 +219,35 @@ class _InterruptingInput:
 class _StubBackend:
     def probe(self):  # type: ignore[no-untyped-def]
         from jukebox.core.models import PlaybackResult
+        from jukebox.runtime_health import DependencyStatus
 
+        self._status = DependencyStatus(
+            code="ready",
+            ready=True,
+            message="waiting for scan input",
+            backend="stub",
+        )
+        self._active = False
         return PlaybackResult(ok=True, backend="stub", message="ready")
+
+    def status(self):  # type: ignore[no-untyped-def]
+        from jukebox.runtime_health import DependencyStatus
+
+        return getattr(
+            self,
+            "_status",
+            DependencyStatus(
+                code="ready",
+                ready=True,
+                message="waiting for scan input",
+                backend="stub",
+            ),
+        )
 
     def dispatch(self, request):  # type: ignore[no-untyped-def]
         from jukebox.core.models import PlaybackResult
 
+        self._active = True
         return PlaybackResult(ok=True, backend="stub", message=f"played {request.uri.raw}")
 
     def enqueue(self, request):  # type: ignore[no-untyped-def]
@@ -248,7 +271,10 @@ class _StubBackend:
         return PlaybackResult(ok=True, backend="stub", message=f"volume {percent}")
 
     def player_active(self) -> bool | None:
-        return False
+        return getattr(self, "_active", False)
+
+    def current_player_active(self) -> bool | None:
+        return getattr(self, "_active", False)
 
 
 class _FakeHealthMonitor:

@@ -85,3 +85,22 @@ class ConfigureLoggingTests(unittest.TestCase):
         self.assertEqual(payload["action_scope"], "child")
         self.assertEqual(payload["playback_mode"], "queue_tracks")
         self.assertEqual(payload["setup_mode"], "setup_ap")
+
+    def test_degraded_runtime_events_are_logged_at_warning_level(self) -> None:
+        stream = io.StringIO()
+        configure_logging(level="INFO", log_format="json", environment="test", stream=stream)
+
+        event_logger = StructuredEventLogger()
+        event_logger.handle(
+            ControllerEvent(
+                code="spotify_rate_limited",
+                message="Spotify rate limited playback requests.",
+                backend="spotify",
+                reason_code="spotify_rate_limited",
+            )
+        )
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(payload["level"], "WARNING")
+        self.assertEqual(payload["event"], "spotify_rate_limited")
+        self.assertEqual(payload["reason_code"], "spotify_rate_limited")

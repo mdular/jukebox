@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from .cards import PlaybackMode, SpotifyMediaCard
+
+if TYPE_CHECKING:
+    from ..runtime_health import DependencyStatus
 
 SpotifyUri = SpotifyMediaCard
 SpotifyUriKind: TypeAlias = Literal["track", "album", "playlist"]
@@ -67,6 +70,9 @@ class PlaybackBackend(Protocol):
     def probe(self) -> PlaybackResult:
         """Probe backend readiness for startup checks."""
 
+    def status(self) -> "DependencyStatus":
+        """Return passive backend readiness and degradation state."""
+
     def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
         """Dispatch the requested playback action."""
 
@@ -84,6 +90,9 @@ class PlaybackBackend(Protocol):
 
     def player_active(self) -> bool | None:
         """Return whether playback is currently active on the target device."""
+
+    def current_player_active(self) -> bool | None:
+        """Return current player activity using a scan-scoped live check."""
 
 
 class EventSink(Protocol):

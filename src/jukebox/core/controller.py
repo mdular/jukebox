@@ -169,8 +169,8 @@ class Controller:
             playback_mode = self._operator_state.load().playback_mode
 
         if playback_mode == "queue_tracks" and uri.kind == "track":
-            player_active = self._playback_backend.player_active()
-            if player_active is False:
+            current_player_active = self._playback_backend.current_player_active()
+            if current_player_active is not True:
                 self._emit(
                     ControllerEvent(
                         code="playback_mode_fallback",

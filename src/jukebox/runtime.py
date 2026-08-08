@@ -66,6 +66,15 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
     input_stream = _build_input_backend(settings, default_stdin)
     input_status_source = _build_input_status_source(settings, input_stream)
     playback_backend = _build_playback_backend(settings)
+    probe_result = playback_backend.probe()
+    if not probe_result.ok and probe_result.reason_code == "spotify_api_auth_error":
+        raise StartupError(
+            code="controller_auth_unavailable",
+            message=probe_result.message or "Spotify controller auth unavailable.",
+            reason_code=probe_result.reason_code,
+            backend=probe_result.backend,
+            device_name=probe_result.device_name,
+        )
     operator_state = OperatorStateStore(settings.operator_state_path)
     feedback_tracker = FeedbackStateTracker()
     system_helpers = CommandSystemHelpers(
@@ -73,11 +82,24 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
         spotifyd_auth_helper_command=settings.spotifyd_auth_helper_command,
         shutdown_helper_command=settings.shutdown_helper_command,
     )
+
+    def auth_status() -> dict[str, object]:
+        payload = system_helpers.auth_status()
+        if payload.get("state") == "succeeded":
+            operator_state.mark_receiver_reauth_requested(False)
+        return payload
+
     setup_mode = SetupModeManager(
         operator_state=operator_state,
         wifi_helper=system_helpers,
         fallback_grace_seconds=settings.setup_fallback_grace_seconds,
     )
+    auth_status()
+
+    def setup_status() -> DependencyStatus:
+        auth_status()
+        return setup_mode.status()
+
     try:
         setup_mode.initialize()
     except RuntimeError:
@@ -105,17 +127,18 @@ def build_runtime(settings: Settings, default_stdin: ReadableInput) -> RuntimeDe
             settings=settings,
             operator_state=operator_state,
             scanner_status=input_status_source.status(),
-            playback_status=cast(_StatusSource, playback_backend).status(),
-            setup_status=setup_mode.status(),
+            playback_status=playback_backend.status(),
+            setup_status=setup_status(),
             idle_status=idle_monitor.status(),
         ),
         submit_wifi=system_helpers.apply_wifi,
+        auth_status=auth_status,
         start_auth=system_helpers.start_auth,
     )
     health_monitor = RuntimeHealthMonitor(
         scanner_status=input_status_source.status,
-        playback_status=cast(_StatusSource, playback_backend).status,
-        setup_status=setup_mode.status,
+        playback_status=playback_backend.status,
+        setup_status=setup_status,
         poll_interval_seconds=settings.health_poll_interval_seconds,
         source=settings.input_backend,
     )
@@ -153,6 +176,8 @@ def _build_playback_backend(settings: Settings) -> PlaybackBackend:
             target_device_name=settings.spotify_target_device_name,
             confirmation_timeout_seconds=settings.spotify_confirm_timeout_seconds,
             confirmation_poll_interval_seconds=settings.spotify_confirm_poll_interval_seconds,
+            device_probe_retry_count=settings.spotify_device_probe_retry_count,
+            device_probe_retry_interval_seconds=settings.spotify_device_probe_retry_interval_seconds,
         )
     return StubPlaybackBackend()
 

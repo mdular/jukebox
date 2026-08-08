@@ -11,10 +11,12 @@ The repository supports both the local `stdin` development loop and the Raspberr
 - [`spec/examples.md`](/Users/markus/Workspace/jukebox/spec/examples.md) contains example QR payloads and the Spotify auth usage flow.
 - Repo-local Codex skills live under [`.codex/skills/`](/Users/markus/Workspace/jukebox/.codex/skills).
 - Pi bring-up and operations live under [`docs/`](/Users/markus/Workspace/jukebox/docs):
+  - [`docs/api-discipline.md`](/Users/markus/Workspace/jukebox/docs/api-discipline.md)
   - [`docs/pi-build.md`](/Users/markus/Workspace/jukebox/docs/pi-build.md)
   - [`docs/pi-setup.md`](/Users/markus/Workspace/jukebox/docs/pi-setup.md)
   - [`docs/pi-deploy.md`](/Users/markus/Workspace/jukebox/docs/pi-deploy.md)
   - [`docs/pi-validation.md`](/Users/markus/Workspace/jukebox/docs/pi-validation.md)
+  - [`docs/spotify-connect-debug.md`](/Users/markus/Workspace/jukebox/docs/spotify-connect-debug.md)
 
 ## Repository Layout
 
@@ -82,10 +84,13 @@ Playback variables:
 - `JUKEBOX_SPOTIFY_DEVICE_ID`: optional override for troubleshooting
 - `JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS`: defaults to `5.0`
 - `JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS`: defaults to `0.25`
-- `JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS`: defaults to `5.0`
+- `JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT`: defaults to `5`
+- `JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS`: defaults to `2.0`
+- `JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS`: defaults to `15.0`
 
 For the controller app, the Spotify refresh token must include `user-read-playback-state` and `user-modify-playback-state`.
 Receiver-service credentials and persistent session material are configured separately for `spotifyd`; they do not belong in `/etc/jukebox/jukebox.env`.
+The runtime follows the API-discipline rules in [`docs/api-discipline.md`](/Users/markus/Workspace/jukebox/docs/api-discipline.md): health, idle, and `status.json` read passive cached playback state only, and `current_player_active()` is reserved for scan-time queue routing.
 
 For Raspberry Pi deployment, start from [`systemd/jukebox.env.example`](/Users/markus/Workspace/jukebox/systemd/jukebox.env.example) and place the real file at `/etc/jukebox/jukebox.env`.
 
@@ -114,5 +119,8 @@ For Pi hardware validation, the default audio path remains a USB sound card on t
 - Operator and control cards use `jukebox:<group>:<action>`.
 - The runtime emits `booting`, `ready`, setup/auth-required, and degraded dependency states; the controller emits scan, validation, duplicate, action, queue, and playback outcome events.
 - The operator HTTP surface defaults to `127.0.0.1:8080` locally and is meant to be exposed on the Pi via `JUKEBOX_OPERATOR_HTTP_BIND=0.0.0.0`.
+- Queue mode is intentionally narrow: track cards queue only when the jukebox target is already playing; album and playlist cards still fall back to replace-style dispatch.
+- Receiver re-auth is a helper-owned browser flow exposed through `/auth`, and the runtime stays in `auth_required` until the helper reports success.
+- `spotify_rate_limited` is a first-class degraded state and should be debugged with [`docs/spotify-connect-debug.md`](/Users/markus/Workspace/jukebox/docs/spotify-connect-debug.md) rather than by adding more background Spotify polling.
 - Under `systemd`, stdout and stderr are designed to be useful in `journalctl`.
 - `systemd/jukebox.service` now waits only for `network-online.target`; receiver readiness is handled in-process by the runtime health monitor.

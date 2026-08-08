@@ -6,6 +6,7 @@ import json
 import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
@@ -14,6 +15,7 @@ from .feedback_state import FeedbackSnapshot
 FeedbackSnapshotProvider = Callable[[], FeedbackSnapshot]
 RuntimeStatusProvider = Callable[[], dict[str, object]]
 WifiSubmitter = Callable[[str, str], str]
+AuthStatusProvider = Callable[[], dict[str, object]]
 AuthStarter = Callable[[], dict[str, object]]
 
 
@@ -38,6 +40,7 @@ class OperatorHttpServer:
         feedback_snapshot: FeedbackSnapshotProvider,
         runtime_status: RuntimeStatusProvider,
         submit_wifi: WifiSubmitter,
+        auth_status: AuthStatusProvider,
         start_auth: AuthStarter,
     ) -> None:
         self._bind = bind
@@ -45,6 +48,7 @@ class OperatorHttpServer:
         self._feedback_snapshot = feedback_snapshot
         self._runtime_status = runtime_status
         self._submit_wifi = submit_wifi
+        self._auth_status = auth_status
         self._start_auth = start_auth
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -109,8 +113,8 @@ class OperatorHttpServer:
             if path == "/auth":
                 return OperatorResponse(
                     status_code=200,
-                    content_type="text/plain; charset=utf-8",
-                    text_body="auth setup",
+                    content_type="text/html; charset=utf-8",
+                    text_body=self._render_auth_page(self._auth_status()),
                 )
             return OperatorResponse(
                 status_code=200,
@@ -139,6 +143,31 @@ class OperatorHttpServer:
             content_type="text/plain; charset=utf-8",
             text_body="not found",
         )
+
+    def _render_auth_page(self, auth_status: dict[str, object]) -> str:
+        rows = "".join(
+            f"<dt>{escape(key)}</dt><dd>{escape(self._stringify_auth_value(value))}</dd>"
+            for key, value in auth_status.items()
+        )
+        return (
+            "<!doctype html>"
+            "<html><head><meta charset=\"utf-8\"><title>Receiver Auth</title></head>"
+            "<body>"
+            "<h1>Receiver Auth</h1>"
+            "<p>Use the start action to begin receiver authentication.</p>"
+            "<form method=\"post\" action=\"/auth/start\">"
+            "<button type=\"submit\">Start auth</button>"
+            "</form>"
+            "<dl>"
+            f"{rows}"
+            "</dl>"
+            "</body></html>"
+        )
+
+    def _stringify_auth_value(self, value: object) -> str:
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, sort_keys=True)
 
     def _handler_class(self) -> type[BaseHTTPRequestHandler]:
         parent = self

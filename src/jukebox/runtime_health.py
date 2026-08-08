@@ -13,9 +13,10 @@ _STATUS_PRIORITY = {
     "setup_required": 1,
     "auth_required": 2,
     "controller_auth_unavailable": 3,
-    "network_unavailable": 4,
-    "receiver_unavailable": 5,
-    "ready": 6,
+    "spotify_rate_limited": 4,
+    "network_unavailable": 5,
+    "receiver_unavailable": 6,
+    "ready": 7,
 }
 
 

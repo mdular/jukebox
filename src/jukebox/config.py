@@ -30,6 +30,12 @@ JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[str] = (
 JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[str] = (
     "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS"
 )
+JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT: Final[str] = (
+    "JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT"
+)
+JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS: Final[str] = (
+    "JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS"
+)
 JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS: Final[str] = "JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS"
 JUKEBOX_OPERATOR_HTTP_BIND: Final[str] = "JUKEBOX_OPERATOR_HTTP_BIND"
 JUKEBOX_OPERATOR_HTTP_PORT: Final[str] = "JUKEBOX_OPERATOR_HTTP_PORT"
@@ -56,7 +62,9 @@ DEFAULT_DUPLICATE_WINDOW_SECONDS: Final[float] = 2.0
 DEFAULT_INPUT_BACKEND: Final[InputBackendName] = "stdin"
 DEFAULT_SPOTIFY_CONFIRM_TIMEOUT_SECONDS: Final[float] = 5.0
 DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS: Final[float] = 0.25
-DEFAULT_HEALTH_POLL_INTERVAL_SECONDS: Final[float] = 5.0
+DEFAULT_SPOTIFY_DEVICE_PROBE_RETRY_COUNT: Final[int] = 5
+DEFAULT_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS: Final[float] = 2.0
+DEFAULT_HEALTH_POLL_INTERVAL_SECONDS: Final[float] = 15.0
 DEFAULT_OPERATOR_HTTP_BIND: Final[str] = "127.0.0.1"
 DEFAULT_OPERATOR_HTTP_PORT: Final[int] = 8080
 DEFAULT_OPERATOR_STATE_PATH: Final[str] = "/var/lib/jukebox/state.json"
@@ -104,6 +112,8 @@ class Settings:
     spotify_target_device_name: str | None
     spotify_confirm_timeout_seconds: float
     spotify_confirm_poll_interval_seconds: float
+    spotify_device_probe_retry_count: int
+    spotify_device_probe_retry_interval_seconds: float
     health_poll_interval_seconds: float
     operator_http_bind: str
     operator_http_port: int
@@ -148,6 +158,16 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         source,
         JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS,
         default=DEFAULT_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS,
+    )
+    spotify_device_probe_retry_count = _read_positive_int(
+        source,
+        JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT,
+        default=DEFAULT_SPOTIFY_DEVICE_PROBE_RETRY_COUNT,
+    )
+    spotify_device_probe_retry_interval_seconds = _read_positive_float(
+        source,
+        JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS,
+        default=DEFAULT_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS,
     )
     health_poll_interval_seconds = _read_positive_float(
         source,
@@ -221,6 +241,8 @@ def from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         spotify_target_device_name=spotify_target_device_name,
         spotify_confirm_timeout_seconds=spotify_confirm_timeout_seconds,
         spotify_confirm_poll_interval_seconds=spotify_confirm_poll_interval_seconds,
+        spotify_device_probe_retry_count=spotify_device_probe_retry_count,
+        spotify_device_probe_retry_interval_seconds=spotify_device_probe_retry_interval_seconds,
         health_poll_interval_seconds=health_poll_interval_seconds,
         operator_http_bind=operator_http_bind,
         operator_http_port=operator_http_port,
@@ -353,6 +375,22 @@ def _read_positive_float(source: Mapping[str, str], key: str, *, default: float)
 
     if parsed <= 0:
         raise ConfigError(f"{key} must be a positive float.")
+    return parsed
+
+
+def _read_positive_int(source: Mapping[str, str], key: str, *, default: int) -> int:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return default
+
+    value = raw_value.strip()
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ConfigError(f"{key} must be a positive integer.") from exc
+
+    if parsed <= 0:
+        raise ConfigError(f"{key} must be a positive integer.")
     return parsed
 
 

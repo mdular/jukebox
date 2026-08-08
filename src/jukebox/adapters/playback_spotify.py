@@ -50,6 +50,8 @@ class SpotifyPlaybackBackend:
         timeout_seconds: float = 5.0,
         confirmation_timeout_seconds: float = 5.0,
         confirmation_poll_interval_seconds: float = 0.25,
+        device_probe_retry_count: int = 5,
+        device_probe_retry_interval_seconds: float = 2.0,
         clock: Clock | None = None,
         sleeper: Sleeper | None = None,
     ) -> None:
@@ -62,97 +64,135 @@ class SpotifyPlaybackBackend:
         self._timeout_seconds = timeout_seconds
         self._confirmation_timeout_seconds = confirmation_timeout_seconds
         self._confirmation_poll_interval_seconds = confirmation_poll_interval_seconds
+        self._device_probe_retry_count = device_probe_retry_count
+        self._device_probe_retry_interval_seconds = device_probe_retry_interval_seconds
         self._clock = time.monotonic if clock is None else clock
         self._sleeper = time.sleep if sleeper is None else sleeper
+        self._access_token: str | None = None
+        self._access_token_expires_at = 0.0
+        self._cached_status = DependencyStatus(
+            code="network_unavailable",
+            ready=False,
+            message="Spotify status not yet determined.",
+            backend="spotify",
+        )
+        self._cached_player_active: bool | None = None
 
     def probe(self) -> PlaybackResult:
-        """Validate Spotify auth for startup checks."""
+        """Validate Spotify auth, seed cached status, and warm target visibility."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
-            return access_token_or_error
-
-        return PlaybackResult(
-            ok=True,
-            backend="spotify",
-            message="Spotify authentication available.",
-        )
-
-    def status(self) -> DependencyStatus:
-        """Return the current Spotify readiness status."""
-
-        access_token_or_error = self._refresh_access_token()
-        if isinstance(access_token_or_error, PlaybackResult):
-            return self._status_from_result(access_token_or_error)
-
-        target_device_or_error = self._resolve_target_device(access_token_or_error)
-        if isinstance(target_device_or_error, PlaybackResult):
-            return self._status_from_result(target_device_or_error)
-
-        return DependencyStatus(
-            code="ready",
-            ready=True,
-            message="waiting for scan input",
-            backend="spotify",
-            device_name=target_device_or_error.name,
-        )
-
-    def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
-        """Refresh an access token, transfer playback, and confirm it started."""
-
-        access_token_or_error = self._refresh_access_token()
-        if isinstance(access_token_or_error, PlaybackResult):
+            self._cache_from_result(access_token_or_error)
             return access_token_or_error
 
         last_result: PlaybackResult | None = None
-        for attempt in range(2):
+        for attempt in range(self._device_probe_retry_count + 1):
             target_device_or_error = self._resolve_target_device(access_token_or_error)
             if isinstance(target_device_or_error, PlaybackResult):
-                if target_device_or_error.reason_code == "device_not_listed" and attempt == 0:
-                    last_result = target_device_or_error
+                last_result = target_device_or_error
+                if (
+                    target_device_or_error.reason_code == "device_not_listed"
+                    and attempt < self._device_probe_retry_count
+                ):
+                    if self._device_probe_retry_interval_seconds > 0:
+                        self._sleeper(self._device_probe_retry_interval_seconds)
                     continue
+                self._cache_from_result(target_device_or_error)
+                if target_device_or_error.reason_code == "device_not_listed":
+                    return PlaybackResult(
+                        ok=True,
+                        backend="spotify",
+                        message=target_device_or_error.message,
+                        reason_code=target_device_or_error.reason_code,
+                        device_name=target_device_or_error.device_name,
+                    )
                 return target_device_or_error
 
-            transfer_result = self._transfer_playback(access_token_or_error, target_device_or_error)
+            self._cache_ready(target_device_or_error.name)
+            return PlaybackResult(
+                ok=True,
+                backend="spotify",
+                message="Spotify authentication available.",
+                device_name=target_device_or_error.name,
+            )
+
+        assert last_result is not None
+        self._cache_from_result(last_result)
+        return last_result
+
+    def status(self) -> DependencyStatus:
+        """Return the passive cached Spotify readiness status."""
+
+        return self._cached_status
+
+    def dispatch(self, request: PlaybackRequest) -> PlaybackResult:
+        """Refresh auth, play directly on target, and fallback to transfer if needed."""
+
+        access_token_or_error = self._refresh_access_token()
+        if isinstance(access_token_or_error, PlaybackResult):
+            self._cache_from_result(access_token_or_error)
+            return access_token_or_error
+
+        target_device_or_error = self._resolve_target_device_with_retry(
+            access_token_or_error, retry_count=1
+        )
+        if isinstance(target_device_or_error, PlaybackResult):
+            self._cache_from_result(target_device_or_error)
+            return target_device_or_error
+
+        play_result = self._start_playback(
+            access_token_or_error, target_device_or_error, request
+        )
+        if not play_result.ok:
+            transfer_result = self._transfer_playback(
+                access_token_or_error, target_device_or_error
+            )
             if not transfer_result.ok:
-                if transfer_result.reason_code == "connect_transfer_failed" and attempt == 0:
-                    last_result = transfer_result
-                    continue
+                self._cache_from_result(transfer_result)
                 return transfer_result
 
             play_result = self._start_playback(
-                access_token_or_error,
-                target_device_or_error,
-                request,
+                access_token_or_error, target_device_or_error, request
             )
             if not play_result.ok:
+                self._cache_from_result(play_result)
                 return play_result
 
-            return self._confirm_playback(access_token_or_error, target_device_or_error, request)
-
-        assert last_result is not None
-        return last_result
+        confirm_result = self._confirm_playback(
+            access_token_or_error, target_device_or_error, request
+        )
+        if confirm_result.ok:
+            self._cache_ready(target_device_or_error.name)
+            self._cached_player_active = True
+        else:
+            self._cache_from_result(confirm_result)
+        return confirm_result
 
     def enqueue(self, request: PlaybackRequest) -> PlaybackResult:
         """Queue one track on the target device."""
 
         if request.uri.kind != "track":
-            return PlaybackResult(
+            result = PlaybackResult(
                 ok=False,
                 backend="spotify",
                 reason_code="unsupported_content",
                 message="Spotify queue only supports track URIs.",
             )
+            self._cache_from_result(result)
+            return result
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
+            self._cache_from_result(access_token_or_error)
             return access_token_or_error
 
         target_device_or_error = self._resolve_target_device(access_token_or_error)
         if isinstance(target_device_or_error, PlaybackResult):
+            self._cache_from_result(target_device_or_error)
             return target_device_or_error
 
-        return self._device_command(
+        result = self._device_command(
             access_token_or_error,
             target_device_or_error,
             path="queue",
@@ -160,19 +200,27 @@ class SpotifyPlaybackBackend:
             query={"uri": request.uri.raw, "device_id": target_device_or_error.device_id},
             operation="queue",
         )
+        if result.ok:
+            self._cache_ready(target_device_or_error.name)
+            self._cached_player_active = True
+        else:
+            self._cache_from_result(result)
+        return result
 
     def stop(self) -> PlaybackResult:
         """Pause playback on the target device."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
+            self._cache_from_result(access_token_or_error)
             return access_token_or_error
 
         target_device_or_error = self._resolve_target_device(access_token_or_error)
         if isinstance(target_device_or_error, PlaybackResult):
+            self._cache_from_result(target_device_or_error)
             return target_device_or_error
 
-        return self._device_command(
+        result = self._device_command(
             access_token_or_error,
             target_device_or_error,
             path="pause",
@@ -180,19 +228,27 @@ class SpotifyPlaybackBackend:
             query={"device_id": target_device_or_error.device_id},
             operation="pause",
         )
+        if result.ok:
+            self._cache_ready(target_device_or_error.name)
+            self._cached_player_active = False
+        else:
+            self._cache_from_result(result)
+        return result
 
     def skip_next(self) -> PlaybackResult:
         """Advance to the next track on the target device."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
+            self._cache_from_result(access_token_or_error)
             return access_token_or_error
 
         target_device_or_error = self._resolve_target_device(access_token_or_error)
         if isinstance(target_device_or_error, PlaybackResult):
+            self._cache_from_result(target_device_or_error)
             return target_device_or_error
 
-        return self._device_command(
+        result = self._device_command(
             access_token_or_error,
             target_device_or_error,
             path="next",
@@ -200,27 +256,36 @@ class SpotifyPlaybackBackend:
             query={"device_id": target_device_or_error.device_id},
             operation="next",
         )
+        if result.ok:
+            self._cache_ready(target_device_or_error.name)
+        else:
+            self._cache_from_result(result)
+        return result
 
     def set_volume_percent(self, percent: int) -> PlaybackResult:
         """Apply a volume preset percentage on the target device."""
 
         if percent < 0 or percent > 100:
-            return PlaybackResult(
+            result = PlaybackResult(
                 ok=False,
                 backend="spotify",
                 reason_code="volume_control_unavailable",
                 message="Spotify volume percent must be between 0 and 100.",
             )
+            self._cache_from_result(result)
+            return result
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
+            self._cache_from_result(access_token_or_error)
             return access_token_or_error
 
         target_device_or_error = self._resolve_target_device(access_token_or_error)
         if isinstance(target_device_or_error, PlaybackResult):
+            self._cache_from_result(target_device_or_error)
             return target_device_or_error
 
-        return self._device_command(
+        result = self._device_command(
             access_token_or_error,
             target_device_or_error,
             path="volume",
@@ -231,32 +296,48 @@ class SpotifyPlaybackBackend:
             },
             operation="volume",
         )
+        if result.ok:
+            self._cache_ready(target_device_or_error.name)
+        else:
+            self._cache_from_result(result)
+        return result
 
     def player_active(self) -> bool | None:
-        """Return whether the target device is actively playing."""
+        """Return the passive cached player activity signal."""
+
+        return self._cached_player_active
+
+    def current_player_active(self) -> bool | None:
+        """Perform one live playback-state read for queue-mode scan routing."""
 
         access_token_or_error = self._refresh_access_token()
         if isinstance(access_token_or_error, PlaybackResult):
-            return None
-
-        target_device_or_error = self._resolve_target_device(access_token_or_error)
-        if isinstance(target_device_or_error, PlaybackResult):
+            self._cached_player_active = None
+            self._cache_from_result(access_token_or_error)
             return None
 
         state_or_error = self._get_current_playback(access_token_or_error)
         if isinstance(state_or_error, PlaybackResult):
+            self._cached_player_active = None
+            self._cache_from_result(state_or_error)
             return None
         if state_or_error is None:
+            self._cached_player_active = False
+            self._cache_ready(self._target_device_name)
             return False
 
-        device = state_or_error.get("device")
-        if not isinstance(device, dict):
-            return None
-        if device.get("id") != target_device_or_error.device_id:
-            return False
-        return bool(state_or_error.get("is_playing") is True)
+        is_target_playing = self._is_configured_target_playing(state_or_error)
+        self._cached_player_active = is_target_playing
+        self._cache_ready(
+            self._device_name_from_playback(state_or_error) or self._target_device_name
+        )
+        return is_target_playing
 
     def _refresh_access_token(self) -> str | PlaybackResult:
+        now = self._clock()
+        if self._access_token is not None and now < self._access_token_expires_at:
+            return self._access_token
+
         credentials = f"{self._client_id}:{self._client_secret}".encode("utf-8")
         encoded_credentials = base64.b64encode(credentials).decode("ascii")
         token_request = Request(
@@ -275,11 +356,9 @@ class SpotifyPlaybackBackend:
             response = self._requester(token_request, self._timeout_seconds)
         except HTTPError as exc:
             if exc.code == 429:
-                return PlaybackResult(
-                    ok=False,
-                    backend="spotify",
-                    reason_code="spotify_rate_limited",
-                    message="Spotify token refresh was rate limited.",
+                return self._rate_limited_result(
+                    exc,
+                    message_prefix="Spotify token refresh was rate limited",
                 )
             return PlaybackResult(
                 ok=False,
@@ -291,14 +370,20 @@ class SpotifyPlaybackBackend:
             return self._network_error(exc)
 
         try:
-            body = response.read().decode("utf-8")
-            payload = json.loads(body)
+            payload = json.loads(response.read().decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return PlaybackResult(
                 ok=False,
                 backend="spotify",
                 reason_code="spotify_api_auth_error",
                 message="Spotify token refresh returned invalid JSON.",
+            )
+        if not isinstance(payload, dict):
+            return PlaybackResult(
+                ok=False,
+                backend="spotify",
+                reason_code="spotify_api_auth_error",
+                message="Spotify token refresh returned an invalid payload.",
             )
 
         access_token = payload.get("access_token")
@@ -309,6 +394,11 @@ class SpotifyPlaybackBackend:
                 reason_code="spotify_api_auth_error",
                 message="Spotify token refresh response did not include an access token.",
             )
+
+        expires_in_raw = payload.get("expires_in", 3600)
+        expires_in = expires_in_raw if isinstance(expires_in_raw, int) else 3600
+        self._access_token = access_token
+        self._access_token_expires_at = now + max(expires_in - 60, 1)
         return access_token
 
     def _resolve_target_device(self, access_token: str) -> _TargetDevice | PlaybackResult:
@@ -342,6 +432,13 @@ class SpotifyPlaybackBackend:
                 reason_code="network_discovery_failed",
                 message="Spotify devices response returned invalid JSON.",
             )
+        if not isinstance(payload, dict):
+            return PlaybackResult(
+                ok=False,
+                backend="spotify",
+                reason_code="network_discovery_failed",
+                message="Spotify devices response returned an invalid payload.",
+            )
 
         devices = payload.get("devices")
         if not isinstance(devices, list):
@@ -374,6 +471,20 @@ class SpotifyPlaybackBackend:
             message="Spotify target device unavailable.",
             device_name=self._target_device_name,
         )
+
+    def _resolve_target_device_with_retry(
+        self, access_token: str, *, retry_count: int
+    ) -> _TargetDevice | PlaybackResult:
+        last_result: PlaybackResult | None = None
+        for attempt in range(retry_count + 1):
+            target_device_or_error = self._resolve_target_device(access_token)
+            if not isinstance(target_device_or_error, PlaybackResult):
+                return target_device_or_error
+            last_result = target_device_or_error
+            if target_device_or_error.reason_code != "device_not_listed" or attempt >= retry_count:
+                return target_device_or_error
+        assert last_result is not None
+        return last_result
 
     def _transfer_playback(self, access_token: str, target_device: _TargetDevice) -> PlaybackResult:
         transfer_request = Request(
@@ -431,10 +542,11 @@ class SpotifyPlaybackBackend:
         else:
             payload = {"context_uri": request.uri.raw}
 
-        url = "https://api.spotify.com/v1/me/player/play"
-        url = f"{url}?{urlencode({'device_id': target_device.device_id})}"
+        play_url = "https://api.spotify.com/v1/me/player/play?" + urlencode(
+            {"device_id": target_device.device_id}
+        )
         play_request = Request(
-            url,
+            play_url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {access_token}",
@@ -474,49 +586,6 @@ class SpotifyPlaybackBackend:
             device_name=target_device.name,
         )
 
-    def _play_payload(self, access_token: str, request: PlaybackRequest) -> dict[str, object]:
-        if request.uri.kind != "track":
-            return {"context_uri": request.uri.raw}
-
-        album_uri = self._track_album_uri(access_token, request)
-        if album_uri is None:
-            return {"uris": [request.uri.raw]}
-
-        return {
-            "context_uri": album_uri,
-            "offset": {"uri": request.uri.raw},
-        }
-
-    def _track_album_uri(self, access_token: str, request: PlaybackRequest) -> str | None:
-        track_request = Request(
-            f"https://api.spotify.com/v1/tracks/{request.uri.spotify_id}",
-            headers={"Authorization": f"Bearer {access_token}"},
-            method="GET",
-        )
-
-        try:
-            response = self._requester(track_request, self._timeout_seconds)
-        except (HTTPError, URLError):
-            return None
-
-        if response.status != 200:
-            return None
-
-        try:
-            payload = json.loads(response.read().decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return None
-        if not isinstance(payload, dict):
-            return None
-
-        album = payload.get("album")
-        if not isinstance(album, dict):
-            return None
-        album_uri = album.get("uri")
-        if not isinstance(album_uri, str) or album_uri == "":
-            return None
-        return album_uri
-
     def _confirm_playback(
         self,
         access_token: str,
@@ -525,6 +594,7 @@ class SpotifyPlaybackBackend:
     ) -> PlaybackResult:
         deadline = self._clock() + self._confirmation_timeout_seconds
         target_device_started_playing = False
+
         while True:
             state_or_error = self._get_current_playback(access_token)
             if isinstance(state_or_error, PlaybackResult):
@@ -574,9 +644,8 @@ class SpotifyPlaybackBackend:
         query: dict[str, str],
         operation: str,
     ) -> PlaybackResult:
-        url = f"https://api.spotify.com/v1/me/player/{path}?{urlencode(query)}"
         command_request = Request(
-            url,
+            f"https://api.spotify.com/v1/me/player/{path}?{urlencode(query)}",
             headers={"Authorization": f"Bearer {access_token}"},
             method=method,
         )
@@ -682,28 +751,75 @@ class SpotifyPlaybackBackend:
             return False
         return payload.get("is_playing") is True
 
+    def _is_configured_target_playing(self, payload: dict[str, object]) -> bool:
+        device = payload.get("device")
+        if not isinstance(device, dict):
+            return False
+        if self._device_id is not None:
+            if device.get("id") != self._device_id:
+                return False
+        elif (
+            self._target_device_name is not None
+            and device.get("name") != self._target_device_name
+        ):
+            return False
+        return payload.get("is_playing") is True
+
+    def _device_name_from_playback(self, payload: dict[str, object]) -> str | None:
+        device = payload.get("device")
+        if not isinstance(device, dict):
+            return None
+        name = device.get("name")
+        return name if isinstance(name, str) and name != "" else None
+
     def _map_http_error(self, exc: HTTPError, *, operation: str) -> PlaybackResult:
         if exc.code in {401, 403}:
             reason_code = "spotify_api_auth_error"
+            message = f"Spotify playback failed with HTTP {exc.code}."
         elif exc.code == 429:
-            reason_code = "spotify_rate_limited"
+            return self._rate_limited_result(exc)
         elif operation == "transfer":
             reason_code = "connect_transfer_failed"
+            message = f"Spotify playback failed with HTTP {exc.code}."
         elif operation == "start":
             reason_code = "spotify_start_failed"
+            message = f"Spotify playback failed with HTTP {exc.code}."
         elif operation in {"pause", "next"} and exc.code == 404:
             reason_code = "no_active_playback"
+            message = f"Spotify playback failed with HTTP {exc.code}."
         elif operation == "volume" and exc.code in {403, 404}:
             reason_code = "volume_control_unavailable"
+            message = f"Spotify playback failed with HTTP {exc.code}."
         elif operation == "queue":
             reason_code = "spotify_queue_failed"
+            message = f"Spotify playback failed with HTTP {exc.code}."
         else:
             reason_code = self._reason_code_for_operation(operation)
+            message = f"Spotify playback failed with HTTP {exc.code}."
         return PlaybackResult(
             ok=False,
             backend="spotify",
             reason_code=reason_code,
-            message=f"Spotify playback failed with HTTP {exc.code}.",
+            message=message,
+        )
+
+    def _rate_limited_result(
+        self,
+        exc: HTTPError,
+        *,
+        message_prefix: str = "Spotify rate limited playback requests",
+    ) -> PlaybackResult:
+        retry_after = exc.headers.get("Retry-After")
+        message = message_prefix
+        if retry_after:
+            message = f"{message_prefix}; retry in {retry_after}s."
+        else:
+            message = f"{message_prefix}."
+        return PlaybackResult(
+            ok=False,
+            backend="spotify",
+            reason_code="spotify_rate_limited",
+            message=message,
         )
 
     def _network_error(self, exc: URLError) -> PlaybackResult:
@@ -714,11 +830,25 @@ class SpotifyPlaybackBackend:
             message=f"Spotify transport error: {exc.reason}",
         )
 
+    def _cache_ready(self, device_name: str | None) -> None:
+        self._cached_status = DependencyStatus(
+            code="ready",
+            ready=True,
+            message="waiting for scan input",
+            backend="spotify",
+            device_name=device_name,
+        )
+
+    def _cache_from_result(self, result: PlaybackResult) -> None:
+        self._cached_status = self._status_from_result(result)
+
     def _status_from_result(self, result: PlaybackResult) -> DependencyStatus:
         if result.reason_code == "spotify_api_auth_error":
             code = "controller_auth_unavailable"
         elif result.reason_code == "device_not_listed":
             code = "receiver_unavailable"
+        elif result.reason_code == "spotify_rate_limited":
+            code = "spotify_rate_limited"
         else:
             code = "network_unavailable"
         return DependencyStatus(

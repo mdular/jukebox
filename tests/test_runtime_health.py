@@ -58,6 +58,19 @@ class RuntimeHealthMonitorTests(unittest.TestCase):
                 ),
             ),
             (
+                "spotify_rate_limited",
+                _MutableStatusSource(_status()),
+                _MutableStatusSource(
+                    _status(
+                        code="spotify_rate_limited",
+                        ready=False,
+                        message="Spotify rate limited playback requests.",
+                        reason_code="spotify_rate_limited",
+                        backend="spotify",
+                    )
+                ),
+            ),
+            (
                 "receiver_unavailable",
                 _MutableStatusSource(_status()),
                 _MutableStatusSource(
@@ -142,9 +155,9 @@ class RuntimeHealthMonitorTests(unittest.TestCase):
 
         first_event = monitor.poll_once()
         playback_status.current = _status(
-            code="network_unavailable",
+            code="spotify_rate_limited",
             ready=False,
-            message="Spotify network discovery unavailable.",
+            message="Spotify rate limited playback requests.",
             reason_code="spotify_rate_limited",
             backend="spotify",
         )
@@ -153,7 +166,7 @@ class RuntimeHealthMonitorTests(unittest.TestCase):
         self.assertIsNotNone(first_event)
         self.assertIsNotNone(second_event)
         assert second_event is not None
-        self.assertEqual(second_event.code, "network_unavailable")
+        self.assertEqual(second_event.code, "spotify_rate_limited")
         self.assertEqual(second_event.reason_code, "spotify_rate_limited")
 
     def test_setup_required_blocks_ready(self) -> None:

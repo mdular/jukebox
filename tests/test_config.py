@@ -23,7 +23,9 @@ class FromEnvTests(unittest.TestCase):
         self.assertIsNone(settings.spotify_target_device_name)
         self.assertEqual(settings.spotify_confirm_timeout_seconds, 5.0)
         self.assertEqual(settings.spotify_confirm_poll_interval_seconds, 0.25)
-        self.assertEqual(settings.health_poll_interval_seconds, 5.0)
+        self.assertEqual(settings.spotify_device_probe_retry_count, 5)
+        self.assertEqual(settings.spotify_device_probe_retry_interval_seconds, 2.0)
+        self.assertEqual(settings.health_poll_interval_seconds, 15.0)
         self.assertEqual(settings.operator_http_bind, "127.0.0.1")
         self.assertEqual(settings.operator_http_port, 8080)
         self.assertEqual(settings.operator_state_path, "/var/lib/jukebox/state.json")
@@ -72,6 +74,8 @@ class FromEnvTests(unittest.TestCase):
                 "JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME": "jukebox",
                 "JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS": "3.5",
                 "JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS": "0.5",
+                "JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT": "7",
+                "JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS": "1.25",
                 "JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS": "7.5",
                 "JUKEBOX_OPERATOR_HTTP_BIND": "0.0.0.0",
                 "JUKEBOX_OPERATOR_HTTP_PORT": "9090",
@@ -103,6 +107,8 @@ class FromEnvTests(unittest.TestCase):
         self.assertEqual(settings.spotify_target_device_name, "jukebox")
         self.assertEqual(settings.spotify_confirm_timeout_seconds, 3.5)
         self.assertEqual(settings.spotify_confirm_poll_interval_seconds, 0.5)
+        self.assertEqual(settings.spotify_device_probe_retry_count, 7)
+        self.assertEqual(settings.spotify_device_probe_retry_interval_seconds, 1.25)
         self.assertEqual(settings.health_poll_interval_seconds, 7.5)
         self.assertEqual(settings.operator_http_bind, "0.0.0.0")
         self.assertEqual(settings.operator_http_port, 9090)
@@ -180,6 +186,13 @@ class FromEnvTests(unittest.TestCase):
     def test_health_poll_interval_must_be_positive(self) -> None:
         with self.assertRaises(ConfigError):
             from_env({"JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS": "0"})
+
+    def test_probe_retry_settings_must_be_positive(self) -> None:
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT": "0"})
+
+        with self.assertRaises(ConfigError):
+            from_env({"JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS": "0"})
 
     def test_playback_mode_default_must_be_supported(self) -> None:
         with self.assertRaises(ConfigError):

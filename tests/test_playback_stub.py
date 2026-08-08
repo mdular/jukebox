@@ -64,7 +64,10 @@ class StubPlaybackBackendTests(unittest.TestCase):
         )
 
         self.assertFalse(backend.player_active())
+        self.assertFalse(backend.current_player_active())
         backend.dispatch(request)
         self.assertTrue(backend.player_active())
+        self.assertTrue(backend.current_player_active())
         backend.stop()
         self.assertFalse(backend.player_active())
+        self.assertFalse(backend.current_player_active())

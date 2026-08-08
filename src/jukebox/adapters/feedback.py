@@ -38,6 +38,9 @@ class TerminalStatusSink:
         if event.code == "network_unavailable":
             reason_code = event.reason_code or "error"
             return f"[NETWORK] unavailable: {reason_code}"
+        if event.code == "spotify_rate_limited":
+            reason_code = event.reason_code or "spotify_rate_limited"
+            return f"[RATE LIMIT] {reason_code}"
         if event.code == "receiver_unavailable":
             reason_code = event.reason_code or "error"
             return f"[RECEIVER] unavailable: {reason_code}"

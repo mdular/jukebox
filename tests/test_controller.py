@@ -10,6 +10,8 @@ from jukebox.core.deduper import ActionDebounceGate, DuplicateGate
 from jukebox.core.models import ControllerEvent, PlaybackRequest, PlaybackResult
 from jukebox.operator_state import OperatorStateStore
 
+_UNSET = object()
+
 
 class ControllerTests(unittest.TestCase):
     def test_valid_scan_is_accepted_and_dispatched(self) -> None:
@@ -215,7 +217,7 @@ class ControllerTests(unittest.TestCase):
             sink = _RecordingSink()
             backend = _RecordingBackend(
                 [PlaybackResult(ok=True, backend="stub", message="queued")],
-                player_active=True,
+                current_player_active=True,
             )
             store = OperatorStateStore(Path(temp_dir) / "state.json")
             store.set_playback_mode("queue_tracks")
@@ -242,7 +244,70 @@ class ControllerTests(unittest.TestCase):
             sink = _RecordingSink()
             backend = _RecordingBackend(
                 [PlaybackResult(ok=True, backend="stub", message="played")],
-                player_active=False,
+                current_player_active=False,
+            )
+            store = OperatorStateStore(Path(temp_dir) / "state.json")
+            store.set_playback_mode("queue_tracks")
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([10.0])),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=store,
+                    system_helpers=_SystemHelpers(),
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=store,
+                event_sinks=[sink],
+            )
+
+            controller.process_line("spotify:track:6rqhFgbbKwnb9MLmUQDhG6\n")
+
+            self.assertEqual(len(backend.enqueued), 0)
+            self.assertEqual(backend.requests[0].uri.kind, "track")
+            self.assertEqual(
+                [event.code for event in sink.events[-3:]],
+                ["scan_accepted", "playback_mode_fallback", "playback_dispatch_succeeded"],
+            )
+
+    def test_queue_mode_dispatches_track_when_player_state_is_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            backend = _RecordingBackend(
+                [PlaybackResult(ok=True, backend="stub", message="played")],
+                current_player_active=None,
+            )
+            store = OperatorStateStore(Path(temp_dir) / "state.json")
+            store.set_playback_mode("queue_tracks")
+            controller = Controller(
+                playback_backend=backend,
+                duplicate_gate=DuplicateGate(window_seconds=2.0, clock=_FakeClock([10.0])),
+                action_router=ActionRouter(
+                    playback_backend=backend,
+                    operator_state=store,
+                    system_helpers=_SystemHelpers(),
+                    volume_presets={"low": 35, "medium": 55, "high": 75},
+                ),
+                operator_state=store,
+                event_sinks=[sink],
+            )
+
+            controller.process_line("spotify:track:6rqhFgbbKwnb9MLmUQDhG6\n")
+
+            self.assertEqual(len(backend.enqueued), 0)
+            self.assertEqual(backend.requests[0].uri.kind, "track")
+            self.assertEqual(
+                [event.code for event in sink.events[-3:]],
+                ["scan_accepted", "playback_mode_fallback", "playback_dispatch_succeeded"],
+            )
+
+    def test_queue_mode_uses_current_player_state_for_track_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sink = _RecordingSink()
+            backend = _RecordingBackend(
+                [PlaybackResult(ok=True, backend="stub", message="played")],
+                player_active=True,
+                current_player_active=False,
             )
             store = OperatorStateStore(Path(temp_dir) / "state.json")
             store.set_playback_mode("queue_tracks")
@@ -302,9 +367,13 @@ class _RecordingBackend:
         results: list[PlaybackResult],
         *,
         player_active: bool | None = False,
+        current_player_active: object = _UNSET,
     ) -> None:
         self._results = results
         self._player_active = player_active
+        self._current_player_active = (
+            player_active if current_player_active is _UNSET else current_player_active
+        )
         self.requests: list[PlaybackRequest] = []
         self.enqueued: list[PlaybackRequest] = []
 
@@ -335,6 +404,9 @@ class _RecordingBackend:
 
     def player_active(self) -> bool | None:
         return self._player_active
+
+    def current_player_active(self) -> bool | None:
+        return self._current_player_active
 
 
 class _RecordingSink:

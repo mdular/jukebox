@@ -28,12 +28,21 @@ class TerminalStatusSinkTests(unittest.TestCase):
                 reason_code="network_discovery_failed",
             )
         )
+        sink.handle(
+            ControllerEvent(
+                code="spotify_rate_limited",
+                message="Spotify rate limited playback requests.",
+                backend="spotify",
+                reason_code="spotify_rate_limited",
+            )
+        )
 
         self.assertEqual(
             stream.getvalue().splitlines(),
             [
                 "[API AUTH] unavailable: spotify_api_auth_error",
                 "[NETWORK] unavailable: network_discovery_failed",
+                "[RATE LIMIT] spotify_rate_limited",
             ],
         )
 

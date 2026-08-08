@@ -75,7 +75,25 @@ class StructuredEventLogger:
             value = getattr(event, key)
             if value is not None:
                 extra[key] = value
-        self._logger.info(event.message, extra=extra)
+        log_method = (
+            self._logger.warning
+            if event.code in _DEGRADED_RUNTIME_CODES
+            else self._logger.info
+        )
+        log_method(event.message, extra=extra)
+
+
+_DEGRADED_RUNTIME_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "scanner_unavailable",
+        "setup_required",
+        "auth_required",
+        "controller_auth_unavailable",
+        "spotify_rate_limited",
+        "network_unavailable",
+        "receiver_unavailable",
+    }
+)
 
 
 def configure_logging(

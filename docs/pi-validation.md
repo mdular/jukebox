@@ -74,6 +74,7 @@ Interpret the status carefully:
 - `runtime.auth_required = true` means the browser auth path must complete before the appliance should be treated as ready.
 - `runtime.playback.code = receiver_unavailable` means the controller can talk to Spotify but the target receiver is not visible.
 - `runtime.playback.code = controller_auth_unavailable` means the Python app's own Spotify controller credentials are broken even if `spotifyd` is running.
+- `runtime.playback.code = spotify_rate_limited` means Spotify is throttling controller requests and the runtime should stay degraded without adding more background polling.
 - `runtime.playback.code = network_unavailable` means Wi-Fi, DNS, or upstream Spotify reachability is broken.
 - `runtime.idle.shutdown_requested = true` means the service has already requested an idle shutdown and the unit should be allowed to power off cleanly.
 
@@ -82,8 +83,8 @@ Interpret the status carefully:
 Run these checks on the physical prototype with real cards:
 
 1. Confirm an ordinary Spotify track card still starts playback.
-2. If another album or playlist was paused earlier on the same receiver, confirm a track card replaces that prior context and then stops again after the scanned track finishes.
-3. After that scanned track finishes, scan a different track card and confirm it starts cleanly without needing a phone or desktop client to use "play on this device" first.
+2. If another album or playlist was paused earlier on another Spotify client, confirm a replace-mode track card takes over playback on the jukebox target without needing a phone or desktop client to use "play on this device" first.
+3. After the first replace-mode scan succeeds, scan a different track card and confirm it starts cleanly again on the jukebox target.
 4. Confirm duplicate suppression still blocks an immediate repeated scan of the same Spotify card.
 5. Confirm `jukebox:playback:stop` pauses active playback.
 6. Confirm `jukebox:playback:next` advances to the next track during active playback.
@@ -105,7 +106,7 @@ Validate the operator-maintenance flow from another device on the same network o
 5. Scan `jukebox:setup:wifi-reset` and confirm the runtime enters `setup_required`.
 6. Confirm the Pi re-enters setup AP mode and the operator surface stays reachable there.
 7. Scan `jukebox:setup:receiver-reauth` and confirm the runtime enters `auth_required`.
-8. Open `/auth`, start the auth flow, and confirm the browser-visible flow surfaces the approval state or approval URL.
+8. Open `/auth`, start the auth flow, and confirm the browser-visible flow surfaces the approval state and the approval URL when `spotifyd authenticate` prints one.
 9. Confirm the runtime stays in `auth_required` until auth succeeds and the receiver becomes visible again.
 10. After auth succeeds, confirm the runtime returns to `ready` without source edits or machine-specific credential copying.
 
@@ -183,4 +184,5 @@ When the assembled device is not behaving correctly, use this order:
 4. Fetch `status.json` and note `feedback.display_state`, `runtime.playback.code`, `runtime.setup_required`, `runtime.auth_required`, and `runtime.idle`.
 5. Run `./scripts/pi-smoke.sh`.
 6. If Spotify playback and Spotify's reported UI state disagree, follow [docs/spotify-connect-debug.md](/Users/markus/Workspace/jukebox/docs/spotify-connect-debug.md) before changing backend behavior.
-7. Only move on to scanner or speaker debugging after the status surface makes the controller-auth, receiver, network, setup, and idle state clear.
+7. If `runtime.playback.code` is `spotify_rate_limited`, respect any `Retry-After` guidance and avoid repeated ad hoc scans while debugging.
+8. Only move on to scanner or speaker debugging after the status surface makes the controller-auth, receiver, rate-limit, network, setup, and idle state clear.

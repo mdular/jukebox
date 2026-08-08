@@ -66,3 +66,8 @@ class StubPlaybackBackend:
         """Return whether the stub backend currently considers playback active."""
 
         return self._active
+
+    def current_player_active(self) -> bool | None:
+        """Return the current player activity for queue-mode routing."""
+
+        return self._active

@@ -7,88 +7,138 @@ import json
 import unittest
 from email.message import Message
 from typing import cast
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import Request
 
 from jukebox.adapters.playback_spotify import ResponseLike, SpotifyPlaybackBackend
 from jukebox.core.cards import SpotifyUriKind
 from jukebox.core.models import PlaybackRequest, SpotifyUri
 
-_TRACK_ALBUM_URI = "spotify:album:1ATL5GLyefJaxhQzSPVrLX"
-
 
 class SpotifyPlaybackBackendTests(unittest.TestCase):
-    def test_status_is_ready_when_auth_and_target_are_available(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
-                ),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        status = backend.status()
-
-        self.assertTrue(status.ready)
-        self.assertEqual(status.code, "ready")
-        self.assertEqual(status.device_name, "jukebox")
-        self.assertEqual(requester.requests[0].full_url, "https://accounts.spotify.com/api/token")
-        self.assertEqual(requester.requests[1].full_url, "https://api.spotify.com/v1/me/player/devices")
-
-    def test_status_reports_controller_auth_unavailable(self) -> None:
-        requester = _SequenceRequester([_http_error("https://accounts.spotify.com/api/token", 401)])
-        backend = _backend(requester=requester)
-
-        status = backend.status()
-
-        self.assertFalse(status.ready)
-        self.assertEqual(status.code, "controller_auth_unavailable")
-        self.assertEqual(status.reason_code, "spotify_api_auth_error")
-
-    def test_status_reports_network_unavailable_for_transport_failures(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                URLError("network down"),
-            ]
-        )
+    def test_status_is_passive_before_probe(self) -> None:
+        requester = _SequenceRequester([])
         backend = _backend(requester=requester)
 
         status = backend.status()
 
         self.assertFalse(status.ready)
         self.assertEqual(status.code, "network_unavailable")
-        self.assertEqual(status.reason_code, "network_discovery_failed")
+        self.assertEqual(status.message, "Spotify status not yet determined.")
+        self.assertEqual(requester.requests, [])
 
-    def test_status_reports_receiver_unavailable_when_target_is_not_listed(self) -> None:
+    def test_probe_caches_ready_status(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(200, {"devices": [{"id": "other-device", "name": "kitchen"}]}),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        status = backend.status()
-
-        self.assertFalse(status.ready)
-        self.assertEqual(status.code, "receiver_unavailable")
-        self.assertEqual(status.reason_code, "device_not_listed")
-        self.assertEqual(status.device_name, "jukebox")
-
-    def test_dispatch_transfers_playback_then_starts_track_and_confirms(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.probe()
+        status = backend.status()
+
+        self.assertTrue(result.ok)
+        self.assertTrue(status.ready)
+        self.assertEqual(status.code, "ready")
+        self.assertEqual(status.device_name, "jukebox")
+        self.assertEqual(
+            [request.full_url for request in requester.requests],
+            [
+                "https://accounts.spotify.com/api/token",
+                "https://api.spotify.com/v1/me/player/devices",
+            ],
+        )
+
+        backend.status()
+        self.assertEqual(len(requester.requests), 2)
+
+    def test_probe_caches_controller_auth_failure(self) -> None:
+        requester = _SequenceRequester([_http_error("https://accounts.spotify.com/api/token", 401)])
+        backend = _backend(requester=requester)
+
+        result = backend.probe()
+        status = backend.status()
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "spotify_api_auth_error")
+        self.assertFalse(status.ready)
+        self.assertEqual(status.code, "controller_auth_unavailable")
+        self.assertEqual(status.reason_code, "spotify_api_auth_error")
+
+    def test_probe_retries_target_lookup_until_device_appears(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(200, {"devices": []}),
+                _FakeResponse(200, {"devices": []}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+            ]
+        )
+        backend = _backend(requester=requester, device_probe_retry_count=5)
+
+        result = backend.probe()
+        status = backend.status()
+
+        self.assertTrue(result.ok)
+        self.assertTrue(status.ready)
+        self.assertEqual(status.device_name, "jukebox")
+        device_requests = [
+            request
+            for request in requester.requests
+            if request.full_url == "https://api.spotify.com/v1/me/player/devices"
+        ]
+        self.assertEqual(len(device_requests), 3)
+
+    def test_probe_caches_receiver_unavailable_after_retry_window(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(200, {"devices": []}),
+                _FakeResponse(200, {"devices": []}),
+                _FakeResponse(200, {"devices": []}),
+            ]
+        )
+        backend = _backend(requester=requester, device_probe_retry_count=2)
+
+        result = backend.probe()
+        status = backend.status()
+
+        self.assertTrue(result.ok)
+        self.assertFalse(status.ready)
+        self.assertEqual(status.code, "receiver_unavailable")
+        self.assertEqual(status.reason_code, "device_not_listed")
+
+    def test_probe_caches_rate_limit_message_with_retry_after(self) -> None:
+        requester = _SequenceRequester(
+            [_http_error("https://accounts.spotify.com/api/token", 429, retry_after=30)]
+        )
+        backend = _backend(requester=requester)
+
+        result = backend.probe()
+        status = backend.status()
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "spotify_rate_limited")
+        self.assertFalse(status.ready)
+        self.assertEqual(status.reason_code, "spotify_rate_limited")
+        self.assertIn("retry in 30s", status.message)
+
+    def test_dispatch_starts_track_directly_with_single_uri_payload(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -105,49 +155,37 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.device_name, "jukebox")
-        (
-            token_request,
-            devices_request,
-            transfer_request,
-            track_request,
-            play_request,
-            state_request,
-        ) = requester.requests
         expected_basic = base64.b64encode(b"client-id:client-secret").decode("ascii")
-        self.assertEqual(token_request.get_header("Authorization"), f"Basic {expected_basic}")
-        self.assertEqual(devices_request.full_url, "https://api.spotify.com/v1/me/player/devices")
-        self.assertEqual(transfer_request.full_url, "https://api.spotify.com/v1/me/player")
         self.assertEqual(
-            json.loads(cast(bytes, transfer_request.data).decode("utf-8")),
-            {"device_ids": ["device-id"], "play": False},
+            requester.requests[0].get_header("Authorization"),
+            f"Basic {expected_basic}",
         )
         self.assertEqual(
-            track_request.full_url,
+            [(request.full_url, request.get_method()) for request in requester.requests],
+            [
+                ("https://accounts.spotify.com/api/token", "POST"),
+                ("https://api.spotify.com/v1/me/player/devices", "GET"),
+                ("https://api.spotify.com/v1/me/player/play?device_id=device-id", "PUT"),
+                ("https://api.spotify.com/v1/me/player", "GET"),
+            ],
+        )
+        self.assertEqual(
+            json.loads(cast(bytes, requester.requests[2].data).decode("utf-8")),
+            {"uris": ["spotify:track:6rqhFgbbKwnb9MLmUQDhG6"]},
+        )
+        self.assertNotIn(
             "https://api.spotify.com/v1/tracks/6rqhFgbbKwnb9MLmUQDhG6",
+            [request.full_url for request in requester.requests],
         )
-        self.assertEqual(
-            play_request.full_url,
-            "https://api.spotify.com/v1/me/player/play?device_id=device-id",
-        )
-        self.assertEqual(
-            json.loads(cast(bytes, play_request.data).decode("utf-8")),
-            {
-                "context_uri": _TRACK_ALBUM_URI,
-                "offset": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
-            },
-        )
-        self.assertEqual(state_request.full_url, "https://api.spotify.com/v1/me/player")
 
-    def test_context_dispatch_uses_context_uri_payload(self) -> None:
+    def test_dispatch_uses_context_uri_payload_for_albums(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _FakeResponse(204, None),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -164,80 +202,62 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         result = backend.dispatch(_request("spotify:album:1ATL5GLyefJaxhQzSPVrLX", "album"))
 
         self.assertTrue(result.ok)
-        play_request = requester.requests[3]
         self.assertEqual(
-            json.loads(cast(bytes, play_request.data).decode("utf-8")),
+            json.loads(cast(bytes, requester.requests[2].data).decode("utf-8")),
             {"context_uri": "spotify:album:1ATL5GLyefJaxhQzSPVrLX"},
         )
 
-    def test_dispatch_refetches_devices_on_each_dispatch(self) -> None:
+    def test_dispatch_falls_back_to_transfer_when_direct_play_fails(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token-1"}),
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
                 _FakeResponse(
                     200,
-                    {"devices": [{"id": "device-a", "name": "jukebox", "is_active": True}]},
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
+                _http_error("https://api.spotify.com/v1/me/player/play", 404),
                 _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
                     {
-                        "device": {"id": "device-a", "name": "jukebox"},
+                        "device": {"id": "device-id", "name": "jukebox"},
                         "is_playing": True,
-                        "item": {"uri": "spotify:track:1111111111111111111111"},
-                    },
-                ),
-                _FakeResponse(200, {"access_token": "access-token-2"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "device-b", "name": "jukebox", "is_active": True}]},
-                ),
-                _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
-                _FakeResponse(204, None),
-                _FakeResponse(
-                    200,
-                    {
-                        "device": {"id": "device-b", "name": "jukebox"},
-                        "is_playing": True,
-                        "item": {"uri": "spotify:track:2222222222222222222222"},
+                        "item": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
                     },
                 ),
             ]
         )
         backend = _backend(requester=requester)
 
-        first = backend.dispatch(_request("spotify:track:1111111111111111111111", "track"))
-        second = backend.dispatch(_request("spotify:track:2222222222222222222222", "track"))
+        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
 
-        self.assertTrue(first.ok)
-        self.assertTrue(second.ok)
-        play_urls = [
-            request.full_url
-            for request in requester.requests
-            if request.full_url.startswith("https://api.spotify.com/v1/me/player/play")
-        ]
+        self.assertTrue(result.ok)
         self.assertEqual(
-            play_urls,
+            [(request.full_url, request.get_method()) for request in requester.requests],
             [
-                "https://api.spotify.com/v1/me/player/play?device_id=device-a",
-                "https://api.spotify.com/v1/me/player/play?device_id=device-b",
+                ("https://accounts.spotify.com/api/token", "POST"),
+                ("https://api.spotify.com/v1/me/player/devices", "GET"),
+                ("https://api.spotify.com/v1/me/player/play?device_id=device-id", "PUT"),
+                ("https://api.spotify.com/v1/me/player", "PUT"),
+                ("https://api.spotify.com/v1/me/player/play?device_id=device-id", "PUT"),
+                ("https://api.spotify.com/v1/me/player", "GET"),
             ],
         )
+        self.assertEqual(
+            json.loads(cast(bytes, requester.requests[3].data).decode("utf-8")),
+            {"device_ids": ["device-id"], "play": False},
+        )
 
-    def test_dispatch_retries_when_target_is_not_listed_initially(self) -> None:
+    def test_dispatch_retries_once_when_target_is_not_listed_initially(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
                 _FakeResponse(200, {"devices": []}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -255,168 +275,77 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         device_requests = [
-            request.full_url
+            request
             for request in requester.requests
             if request.full_url == "https://api.spotify.com/v1/me/player/devices"
         ]
         self.assertEqual(len(device_requests), 2)
 
-    def test_dispatch_retries_once_after_transfer_failure(self) -> None:
+    def test_token_is_cached_until_expiry(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "token-1", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _http_error("https://api.spotify.com/v1/me/player", 404),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
-                ),
-                _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
-                _FakeResponse(204, None),
-                _FakeResponse(
-                    200,
-                    {
-                        "device": {"id": "device-id", "name": "jukebox"},
-                        "is_playing": True,
-                        "item": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
-                    },
                 ),
             ]
         )
-        backend = _backend(requester=requester)
+        backend = _backend(requester=requester, clock=_FakeClock([0.0, 100.0]))
 
-        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+        first = backend.probe()
+        second = backend.probe()
 
-        self.assertTrue(result.ok)
-        transfer_requests = [
-            request.full_url for request in requester.requests if request.full_url == "https://api.spotify.com/v1/me/player"
+        self.assertTrue(first.ok)
+        self.assertTrue(second.ok)
+        token_requests = [
+            request
+            for request in requester.requests
+            if request.full_url == "https://accounts.spotify.com/api/token"
         ]
-        self.assertEqual(len(transfer_requests), 3)
+        self.assertEqual(len(token_requests), 1)
 
-    def test_dispatch_returns_device_not_listed_after_retry_exhausted(self) -> None:
+    def test_token_refreshes_after_expiry(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(200, {"devices": []}),
-                _FakeResponse(200, {"devices": []}),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
-
-        self.assertFalse(result.ok)
-        self.assertEqual(result.reason_code, "device_not_listed")
-
-    def test_dispatch_reports_network_discovery_failure(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                URLError("network down"),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
-
-        self.assertFalse(result.ok)
-        self.assertEqual(result.reason_code, "network_discovery_failed")
-
-    def test_dispatch_times_out_when_playback_is_not_confirmed(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "token-1", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
-                _FakeResponse(204, None),
-                _FakeResponse(
-                    200,
-                    {"device": {"id": "device-id", "name": "jukebox"}, "is_playing": False},
-                ),
-                _FakeResponse(
-                    200,
-                    {"device": {"id": "device-id", "name": "jukebox"}, "is_playing": False},
-                ),
-            ]
-        )
-        backend = _backend(
-            requester=requester,
-            confirmation_timeout_seconds=0.5,
-            confirmation_poll_interval_seconds=0.25,
-            clock=_FakeClock([0.0, 0.0, 0.25, 0.5]),
-        )
-
-        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
-
-        self.assertFalse(result.ok)
-        self.assertEqual(result.reason_code, "spotify_start_not_confirmed")
-
-    def test_dispatch_accepts_playing_target_device_when_spotify_metadata_is_stale(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "token-2", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _FakeResponse(204, None),
-                _FakeResponse(200, {"album": {"uri": _TRACK_ALBUM_URI}}),
-                _FakeResponse(204, None),
-                _FakeResponse(
-                    200,
-                    {
-                        "device": {"id": "device-id", "name": "jukebox"},
-                        "is_playing": True,
-                        "item": {"uri": "spotify:track:previous-track"},
-                    },
-                ),
-                _FakeResponse(
-                    200,
-                    {
-                        "device": {"id": "device-id", "name": "jukebox"},
-                        "is_playing": True,
-                        "item": {"uri": "spotify:track:previous-track"},
-                    },
-                ),
             ]
         )
-        backend = _backend(
-            requester=requester,
-            confirmation_timeout_seconds=0.5,
-            confirmation_poll_interval_seconds=0.25,
-            clock=_FakeClock([0.0, 0.0, 0.25, 0.5]),
-        )
+        backend = _backend(requester=requester, clock=_FakeClock([0.0, 4000.0, 4000.0]))
 
-        result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+        first = backend.probe()
+        second = backend.probe()
 
-        self.assertTrue(result.ok)
-        self.assertEqual(result.device_name, "jukebox")
-        self.assertEqual(
-            result.message,
-            (
-                "Playback started, but Spotify did not report the requested item "
-                "before confirmation timed out."
-            ),
-        )
+        self.assertTrue(first.ok)
+        self.assertTrue(second.ok)
+        token_requests = [
+            request
+            for request in requester.requests
+            if request.full_url == "https://accounts.spotify.com/api/token"
+        ]
+        self.assertEqual(len(token_requests), 2)
 
-    def test_track_dispatch_falls_back_to_single_uri_when_album_lookup_fails(self) -> None:
+    def test_dispatch_updates_passive_status_and_player_active_cache(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
                 ),
-                _FakeResponse(204, None),
-                _http_error("https://api.spotify.com/v1/tracks/6rqhFgbbKwnb9MLmUQDhG6", 500),
                 _FakeResponse(204, None),
                 _FakeResponse(
                     200,
@@ -431,18 +360,103 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         backend = _backend(requester=requester)
 
         result = backend.dispatch(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
+        request_count = len(requester.requests)
 
         self.assertTrue(result.ok)
-        play_request = requester.requests[4]
-        self.assertEqual(
-            json.loads(cast(bytes, play_request.data).decode("utf-8")),
-            {"uris": ["spotify:track:6rqhFgbbKwnb9MLmUQDhG6"]},
+        self.assertTrue(backend.status().ready)
+        self.assertEqual(backend.status().device_name, "jukebox")
+        self.assertTrue(backend.player_active())
+        self.assertEqual(len(requester.requests), request_count)
+
+    def test_stop_updates_passive_player_active_cache(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(
+                    200,
+                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
+                ),
+                _FakeResponse(204, None),
+            ]
         )
+        backend = _backend(requester=requester)
+
+        result = backend.stop()
+        request_count = len(requester.requests)
+
+        self.assertTrue(result.ok)
+        self.assertFalse(backend.player_active())
+        self.assertEqual(len(requester.requests), request_count)
+
+    def test_current_player_active_is_live_scan_check(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(
+                    200,
+                    {
+                        "device": {"id": "device-id", "name": "jukebox"},
+                        "is_playing": True,
+                    },
+                ),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        current = backend.current_player_active()
+
+        self.assertTrue(current)
+        self.assertTrue(backend.player_active())
+        self.assertEqual(
+            [(request.full_url, request.get_method()) for request in requester.requests],
+            [
+                ("https://accounts.spotify.com/api/token", "POST"),
+                ("https://api.spotify.com/v1/me/player", "GET"),
+            ],
+        )
+
+    def test_current_player_active_returns_false_for_other_active_device(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _FakeResponse(
+                    200,
+                    {
+                        "device": {"id": "desktop-id", "name": "desktop"},
+                        "is_playing": True,
+                    },
+                ),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        current = backend.current_player_active()
+
+        self.assertFalse(current)
+        self.assertFalse(backend.player_active())
+
+    def test_current_player_active_caches_rate_limit_status(self) -> None:
+        requester = _SequenceRequester(
+            [
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
+                _http_error("https://api.spotify.com/v1/me/player", 429, retry_after=15),
+            ]
+        )
+        backend = _backend(requester=requester)
+
+        current = backend.current_player_active()
+        status = backend.status()
+
+        self.assertIsNone(current)
+        self.assertIsNone(backend.player_active())
+        self.assertFalse(status.ready)
+        self.assertEqual(status.reason_code, "spotify_rate_limited")
+        self.assertIn("retry in 15s", status.message)
 
     def test_enqueue_calls_queue_endpoint(self) -> None:
         requester = _SequenceRequester(
             [
-                _FakeResponse(200, {"access_token": "access-token"}),
+                _FakeResponse(200, {"access_token": "access-token", "expires_in": 3600}),
                 _FakeResponse(
                     200,
                     {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
@@ -455,115 +469,10 @@ class SpotifyPlaybackBackendTests(unittest.TestCase):
         result = backend.enqueue(_request("spotify:track:6rqhFgbbKwnb9MLmUQDhG6", "track"))
 
         self.assertTrue(result.ok)
-        queue_request = requester.requests[2]
         self.assertEqual(
-            queue_request.full_url,
+            requester.requests[2].full_url,
             "https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A6rqhFgbbKwnb9MLmUQDhG6&device_id=device-id",
         )
-
-    def test_stop_calls_pause_endpoint(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
-                ),
-                _FakeResponse(204, None),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        result = backend.stop()
-
-        self.assertTrue(result.ok)
-        self.assertEqual(
-            requester.requests[2].full_url,
-            "https://api.spotify.com/v1/me/player/pause?device_id=device-id",
-        )
-
-    def test_skip_next_calls_next_endpoint(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
-                ),
-                _FakeResponse(204, None),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        result = backend.skip_next()
-
-        self.assertTrue(result.ok)
-        self.assertEqual(
-            requester.requests[2].full_url,
-            "https://api.spotify.com/v1/me/player/next?device_id=device-id",
-        )
-
-    def test_set_volume_percent_calls_volume_endpoint(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {"devices": [{"id": "device-id", "name": "jukebox", "is_active": True}]},
-                ),
-                _FakeResponse(204, None),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        result = backend.set_volume_percent(55)
-
-        self.assertTrue(result.ok)
-        self.assertEqual(
-            requester.requests[2].full_url,
-            "https://api.spotify.com/v1/me/player/volume?volume_percent=55&device_id=device-id",
-        )
-
-    def test_player_active_reports_true_for_matching_playback(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {
-                        "devices": [{"id": "device-id", "name": "jukebox", "is_active": True}],
-                    },
-                ),
-                _FakeResponse(
-                    200,
-                    {
-                        "device": {"id": "device-id", "name": "jukebox"},
-                        "is_playing": True,
-                        "item": {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"},
-                    },
-                ),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        self.assertTrue(backend.player_active())
-
-    def test_player_active_reports_false_when_no_playback_is_active(self) -> None:
-        requester = _SequenceRequester(
-            [
-                _FakeResponse(200, {"access_token": "access-token"}),
-                _FakeResponse(
-                    200,
-                    {
-                        "devices": [{"id": "device-id", "name": "jukebox", "is_active": True}],
-                    },
-                ),
-                _FakeResponse(204, None),
-            ]
-        )
-        backend = _backend(requester=requester)
-
-        self.assertFalse(backend.player_active())
 
 
 def _backend(
@@ -571,6 +480,7 @@ def _backend(
     requester: _SequenceRequester,
     confirmation_timeout_seconds: float = 5.0,
     confirmation_poll_interval_seconds: float = 0.25,
+    device_probe_retry_count: int = 0,
     clock: "_FakeClock | None" = None,
 ) -> SpotifyPlaybackBackend:
     return SpotifyPlaybackBackend(
@@ -581,6 +491,8 @@ def _backend(
         requester=requester,
         confirmation_timeout_seconds=confirmation_timeout_seconds,
         confirmation_poll_interval_seconds=confirmation_poll_interval_seconds,
+        device_probe_retry_count=device_probe_retry_count,
+        device_probe_retry_interval_seconds=0.0,
         clock=_FakeClock([0.0, 0.0]) if clock is None else clock,
         sleeper=lambda seconds: None,
     )
@@ -590,8 +502,11 @@ def _request(raw: str, kind: SpotifyUriKind) -> PlaybackRequest:
     return PlaybackRequest(uri=SpotifyUri(raw=raw, kind=kind, spotify_id=raw.rsplit(":", 1)[1]))
 
 
-def _http_error(url: str, code: int) -> HTTPError:
-    return HTTPError(url=url, code=code, msg="HTTP error", hdrs=Message(), fp=None)
+def _http_error(url: str, code: int, *, retry_after: int | None = None) -> HTTPError:
+    headers = Message()
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    return HTTPError(url=url, code=code, msg="HTTP error", hdrs=headers, fp=None)
 
 
 class _SequenceRequester:

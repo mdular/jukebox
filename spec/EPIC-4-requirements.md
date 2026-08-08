@@ -11,6 +11,8 @@ The goal is to close the loop on the stable V1 appliance baseline from EPIC 3 wi
 
 This is a requirements document, not a technical design.
 It defines the user-facing polish, selected control and setup expansion, appliance-grade standalone maintenance behavior, and explicit V2 boundary EPIC 4 must deliver.
+For Spotify playback specifically, EPIC 4 polish means clarifying the appliance behavior contract around honest readiness, honest scan outcomes, and explicit degraded-state visibility under real receiver-visibility, client-state, and throttling conditions.
+It does not automatically promote every plausible playback hardening idea into required product behavior unless that behavior is explicitly selected and validated.
 
 This document treats the current EPIC 3 baseline recorded in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) and [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md) as the starting point for EPIC 4:
 
@@ -28,9 +30,11 @@ Refine the stable appliance baseline into a V1 release-worthy standalone jukebox
 EPIC 4 is complete when the polished appliance baseline demonstrates the following:
 
 - User-facing feedback communicates actual readiness and major scan outcomes clearly enough that the device feels more responsive without appearing falsely ready.
+- Spotify playback polish makes replace mode and the selected queue-mode behavior feel trustworthy on the appliance itself, including when another Spotify client was previously active or the receiver is still recovering after boot.
 - The selected card-driven control baseline, including the checked D-10 items promoted into scope, works without making ordinary music-card use confusing or fragile.
 - Routine operator tasks such as initial Wi-Fi setup, automatic fallback setup access, receiver auth or re-auth, shutdown, and selected recovery flows are supported by a documented companion setup path rather than machine-specific bring-up hacks.
 - Automatic Wi-Fi fallback and long-idle shutdown make the appliance more self-managing without weakening the EPIC 3 reboot, recovery, and scan-to-playback baseline.
+- Operator-facing feedback and diagnostics surface meaningful degraded causes, including receiver unavailability and Spotify-side throttling, instead of collapsing them into silent or falsely successful playback behavior.
 - The mono amp-and-speaker and hardware-volume baseline remain explicit for V1, even if optional software-side volume preset cards are added.
 - The repository clearly separates EPIC 4 V1 deliverables from the remaining post-roadmap backlog, and it records a post-standalone review checkpoint for further UX experimentation before V2 hardware or interaction commitments are made.
 
@@ -173,6 +177,7 @@ Use this checklist to distinguish which deferred ideas are now promoted into EPI
 
 - Translating the existing appliance state model into clearer user-facing feedback behavior that complements the scanner's built-in scan beep.
 - Refining readiness and scan feedback so the device feels more responsive without overstating readiness.
+- Clarifying the Spotify playback behavior contract so delayed receiver visibility, stale client state, and degraded Spotify conditions produce honest appliance behavior rather than ambiguous or falsely successful outcomes.
 - A selected card-driven control baseline that includes stop, next-track, queue-vs-replacement toggles, volume preset cards, graceful shutdown, Wi-Fi reset, and selected setup-entry cards that remain explicit operator or control actions rather than ordinary music cards.
 - A browser-based companion setup, auth, and recovery interface from another device, including no-Wi-Fi bring-up and selected reset or re-auth flows.
 - Automatic Wi-Fi fallback behavior that helps the appliance re-enter a documented setup path when Wi-Fi is absent or setup mode is explicitly requested.
@@ -191,6 +196,7 @@ Use this checklist to distinguish which deferred ideas are now promoted into EPI
 - A child-facing daily-use management UI or a broader dashboard beyond the selected setup, auth, status, and healthcheck flows.
 - Built-in volume controls, further amp or speaker integration, enclosure acoustics, or other V2 audio implementation work in EPIC 4.
 - Additional physical controls beyond the selected card-first EPIC 4 control baseline.
+- Single-track completion features or speculative playback-confirmation hardening beyond the selected stop, next-track, and replace-versus-queue baseline unless a later spec adopts them explicitly.
 
 ## Functional Requirements
 
@@ -203,6 +209,7 @@ Requirements:
 - The polished baseline shall define what the user-facing feedback shows for booting, degraded or waiting, ready, scan acknowledgement, duplicate suppression, invalid payload, unsupported content, playback success, playback failure, supported control actions, and supported setup actions.
 - The ready feedback shall remain reserved for a state where autonomous scan-to-playback is actually usable.
 - A degraded or dependency-recovery state shall remain distinguishable from a fully ready state.
+- While receiver visibility, controller auth, or network recovery needed for autonomous playback is still pending, the runtime shall remain observably waiting or degraded rather than presenting the same ready indication as a usable jukebox.
 - The feedback contract shall account for the scanner's existing scan-receipt beep so device-level acknowledgement and software-level readiness or playback feedback do not conflict.
 - The feedback contract shall remain understandable without requiring the operator to read logs during normal use.
 
@@ -217,7 +224,9 @@ Requirements:
 - The selected feedback baseline shall define which part of immediate acknowledgement comes from scanner hardware, software feedback, or both.
 - A valid scan shall produce immediate observable acknowledgement, but playback success or failure shall remain a later distinct outcome.
 - Playback feedback shall not report a failure solely because Spotify Connect metadata or queue state lags behind audible playback on the selected target device.
+- Playback feedback shall describe the outcome of the scanned request on the jukebox target device rather than treating unrelated or stale playback on another Spotify client as equivalent success.
 - Duplicate suppression, invalid payloads, unsupported content, and unsupported control actions shall remain distinguishable from successful playback.
+- When a scan cannot complete because the receiver is unavailable, controller auth is unavailable, network reachability is missing, or Spotify is throttling requests, that degraded outcome shall remain distinguishable from invalid content and from successful playback.
 - The responsiveness model shall not depend on claiming readiness or success before the underlying state is actually reached.
 
 Related decisions: `D-1 Feedback Translation Scope` and `D-2 Perceived Responsiveness Policy`.
@@ -244,9 +253,11 @@ Requirements:
 
 - Added controls shall not change the core rule that music cards remain the primary interaction path.
 - The selected replace-versus-queue behavior shall be explicitly documented, including any content-type limits needed to keep the behavior honest.
-- In queue mode, track cards may still start playback immediately if the player is idle, so a child-facing scan does not appear to have been ignored.
+- In queue mode, track cards shall start playback immediately when the jukebox target is idle or another Spotify client is currently active, and shall queue only once playback is already active on the jukebox target.
+- Album and playlist cards shall keep explicit replacement semantics in queue mode unless a later spec expands supported queue behavior for them.
 - Added controls shall not silently alter the baseline behavior for households that never use control cards.
 - Maintenance or setup behavior shall remain separate from the ordinary child-facing music-card baseline even when delivered through cards.
+- The selected playback-mode polish shall not imply single-track auto-stop or other completion-time behavior unless that behavior is explicitly added to EPIC 4 scope.
 
 Related decisions: `D-3 Stop Action Surface`, `D-4 Additional Control Scope`, and `D-10 V1 Scope Boundary`.
 
@@ -289,6 +300,7 @@ Requirements:
 
 - The repository shall document the operator flows needed for routine validation, setup, receiver auth or re-auth, recovery, selected EPIC 4 control cards, automatic Wi-Fi fallback expectations, and shutdown behavior.
 - If EPIC 4 includes a healthcheck or diagnostic endpoint, the documentation shall define what state and config information it exposes and how operators are expected to use it.
+- The selected diagnostic surface shall make routine degraded causes such as receiver unavailability, controller-auth failure, network unavailability, and Spotify-side throttling distinguishable enough that operators do not have to infer them from ambiguous playback symptoms.
 - Maintenance guidance shall be understandable without source-level knowledge.
 - The selected maintenance ergonomics shall remain narrowly scoped to real appliance upkeep tasks.
 - Any helper flow introduced for maintenance shall preserve the headless Pi direction and avoid requiring a desktop session on the Pi itself.
@@ -316,6 +328,7 @@ Requirements:
 
 - The polished baseline shall continue to boot into a usable autonomous scan-to-playback path without new routine manual recovery steps.
 - Feedback polish shall not present the device as ready before the underlying playback path is actually ready.
+- Once the runtime has reached ready on the supported receiver baseline, ordinary scans in the default replace path shall not require a phone or desktop client to manually wake or pull playback onto the jukebox.
 - Added control, setup, networking, or shutdown behavior shall not weaken the supported reboot, power-cycle, or same-LAN recovery expectations established in EPIC 3.
 - Regression validation shall cover both the new EPIC 4 behavior and the carried-forward EPIC 3 boot, recovery, and scan-to-playback baseline.
 - Because EPIC 4 now includes networking changes, full network-interruption reruns are required as part of EPIC 4 validation.
@@ -372,6 +385,7 @@ Requirements:
 - A polish improvement should not be accepted if it weakens ordinary boot, recovery, or playback reliability.
 - The polished runtime should remain honest about degraded states rather than hiding them behind more attractive feedback.
 - Normal operation should not depend on more frequent operator intervention than the hardened EPIC 3 baseline.
+- Background observation and diagnostics shall stay disciplined enough that ordinary idle operation does not erode scan-time playback reliability through avoidable Spotify API pressure.
 
 Related decisions: `D-1 Feedback Translation Scope`, `D-8 Maintenance Ergonomics Scope`, and `D-9 Reliability Regression Gate`.
 
@@ -419,6 +433,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 - When the user-facing feedback is observed
 - Then it does not present the same ready indication as a fully usable runtime
 - And the waiting or degraded condition remains distinguishable from ready
+- And, once the supported recovery path makes autonomous playback usable again, the runtime can later return to ready without requiring a manual play-on-this-device rescue step from another client
 
 ### AC-2 Immediate Scan Acknowledgement
 
@@ -444,9 +459,10 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 ### AC-5 Queue Toggle Honesty
 
 - Given the selected EPIC 4 baseline includes replace-versus-queue controls
-- When the operator reviews or uses the documented queue behavior
-- Then any content-type limits or fallback behavior are explicit
-- And the device does not pretend unsupported queue behavior works for all card types
+- When queue mode is selected and a track card is scanned while the jukebox target is idle or another client is currently the active player
+- Then the scan starts playback on the jukebox target rather than silently behaving as if the jukebox were already active
+- And later track-card scans during active jukebox playback queue as documented
+- And any album or playlist fallback behavior remains explicit rather than implying full queue support for all supported Spotify URI types
 
 ### AC-6 Companion Setup, Auth, and Automatic Wi-Fi Fallback
 
@@ -468,6 +484,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 - Given the EPIC 4 changes are in place
 - When the documented reboot, recovery, network-interruption, and scan-to-playback validation flow is rerun
 - Then the polished system still meets the carried-forward EPIC 3 reliability expectations
+- And ordinary ready-state scans do not require a routine phone or desktop rescue step to pull playback onto the jukebox
 - And no new routine daily intervention step has been introduced
 
 ### AC-9 Audio Direction Clarity
@@ -482,6 +499,7 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 - Given the assembled appliance needs routine validation, setup, auth, recovery, or a supported maintenance task
 - When the operator follows the repository guidance and any selected diagnostic surface
 - Then the workflow is understandable without source-level knowledge
+- And common degraded causes such as receiver unavailability, auth failure, network failure, and Spotify throttling remain distinguishable on the selected diagnostic surface
 - And it remains narrowly scoped to practical appliance upkeep rather than a broad daily-use management interface
 
 ### AC-11 Core Interaction Continuity
@@ -501,12 +519,13 @@ Related decisions: `D-6 Audio Transition Scope`, `D-8 Maintenance Ergonomics Sco
 ## Deliverables
 
 - A requirements-backed user-facing feedback contract for the polished appliance baseline, including how scanner-beep acknowledgement and software feedback work together.
+- A requirements-backed playback-behavior contract for the jukebox target that clarifies honest readiness, honest replace-versus-queue outcomes, and explicit degraded-state visibility without implying extra lifecycle features that are not in scope.
 - A selected EPIC 4 card-driven control baseline that includes stop, next-track, replace-versus-queue toggles, volume preset cards, graceful shutdown, and selected setup-entry or recovery cards while staying compatible with the child-first interaction model.
 - A documented companion setup, auth, and recovery path suited to the headless appliance, including automatic Wi-Fi fallback behavior.
 - A documented rollback-safe Wi-Fi reset and replacement path for remotely testing setup changes when the device already has a known-working client network.
 - A defined idle-shutdown behavior and recovery expectation appropriate for family appliance use.
 - An explicit statement that EPIC 4 keeps the V1 mono amp-and-speaker and hardware-volume baseline while deferring built-in audio controls and further audio integration.
-- Updated operator guidance, diagnostic-surface expectations, and regression-validation expectations that preserve the EPIC 3 baseline.
+- Updated operator guidance, diagnostic-surface expectations, and regression-validation expectations that preserve the EPIC 3 baseline while keeping receiver, auth, network, and Spotify-throttling failures distinguishable during appliance troubleshooting.
 - A labeled post-roadmap backlog plus a post-standalone review checkpoint for future control, feedback, and V2 planning.
 
 ## Handoff Questions
@@ -549,6 +568,7 @@ This determines how to treat the remaining roadmap parking-lot items that affect
 
 - This document intentionally builds on the current EPIC 3 baseline recorded in [docs/pi-setup-log.md](/Users/markus/Workspace/jukebox/docs/pi-setup-log.md) and [docs/pi-validation.md](/Users/markus/Workspace/jukebox/docs/pi-validation.md) rather than reopening those hardening outcomes.
 - This document intentionally promotes the checked D-10 items into EPIC 4 scope because they complete the V1 standalone appliance boundary described in [spec/roadmap.md](/Users/markus/Workspace/jukebox/spec/roadmap.md).
+- This document intentionally incorporates the externally visible Spotify playback lessons captured in [docs/spotify-playback-retro.md](/Users/markus/Workspace/jukebox/docs/spotify-playback-retro.md) without turning every branch-local or unproven hardening idea into an EPIC 4 requirement.
 - This document intentionally leaves V2 centered on the chosen single-speaker audio direction and any later physical feedback, control, or usage-mode work that should be informed by real standalone usage.
 - This document intentionally does not choose a technical module layout, GPIO wiring plan, browser implementation, or auth implementation mechanism.
 - Those choices belong in [spec/EPIC-4-technical.md](/Users/markus/Workspace/jukebox/spec/EPIC-4-technical.md).

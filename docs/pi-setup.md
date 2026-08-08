@@ -1,7 +1,7 @@
 # Raspberry Pi Setup
 
-This is the authoritative EPIC 3 bring-up guide for a fresh Raspberry Pi 3 running Raspberry Pi OS Lite.
-It replaces the earlier EPIC 2 receiver guidance.
+This is the authoritative EPIC 4 bring-up guide for a fresh Raspberry Pi 3 running Raspberry Pi OS Lite.
+It carries forward the stabilized EPIC 3 receiver baseline and adds the EPIC 4 operator/auth flows, control-card runtime, and passive-status behavior.
 
 ## Scope
 
@@ -262,67 +262,38 @@ sudo chown pi:pi /var/cache/spotifyd
 ```
 
 Receiver-side auth is separate from the jukebox app's refresh token.
-For this repo's EPIC 3 baseline, use `spotifyd`'s manual OAuth login flow and copy the resulting credential file onto the Pi.
+For the EPIC 4 baseline, use the helper-owned auth flow exposed by the runtime instead of manually copying credential files from another machine.
 Do not rely on a keyring-backed login for the system-wide `spotifyd.service`.
 
 Use this sequence:
 
 1. Finish `/etc/spotifyd.conf` on the Pi first, especially the final `cache_path`.
-2. On a browser-capable machine, install a `spotifyd` binary and create a temporary `/etc/spotifyd.conf` that only sets a cache path.
-This is the path that worked with the Homebrew macOS install used during bring-up:
-
-```sh
-mkdir -p /tmp/spotifyd-auth
-sudo cp /etc/spotifyd.conf /etc/spotifyd.conf.bak 2>/dev/null || true
-cat | sudo tee /etc/spotifyd.conf >/dev/null <<'EOF'
-[global]
-cache_path = "/tmp/spotifyd-auth"
-EOF
-```
-
-3. On that same browser-capable machine, start the OAuth flow:
-
-```sh
-spotifyd authenticate
-```
-
-4. Open the URL printed by `spotifyd`, log in to Spotify, and approve the connection.
-5. After the browser shows `Go back to your terminal :)`, confirm that the credential file now exists on the browser-capable machine:
-
-```sh
-ls -l /tmp/spotifyd-auth/oauth/credentials.json
-```
-
-6. Copy that file onto the Pi and place it under the Pi's configured cache path:
-
-```sh
-scp /tmp/spotifyd-auth/oauth/credentials.json pi@jukebox.local:/tmp/spotifyd-credentials.json
-ssh pi@jukebox.local '
-  sudo mkdir -p /var/cache/spotifyd/oauth &&
-  sudo install -o pi -g pi -m 600 /tmp/spotifyd-credentials.json /var/cache/spotifyd/oauth/credentials.json &&
-  rm -f /tmp/spotifyd-credentials.json
-'
-```
-
-7. Back on the Pi, start the receiver and confirm it comes up cleanly:
+2. Bootstrap and deploy the repo so `/usr/local/libexec/jukebox-spotifyd-auth-helper` and the operator HTTP surface are installed.
+3. Confirm `/etc/jukebox/jukebox.env` includes:
+   - `JUKEBOX_OPERATOR_HTTP_BIND=0.0.0.0`
+   - `JUKEBOX_OPERATOR_HTTP_PORT`
+   - `JUKEBOX_SPOTIFYD_AUTH_HELPER_COMMAND=/usr/local/libexec/jukebox-spotifyd-auth-helper`
+4. Start the services:
 
 ```sh
 sudo systemctl enable spotifyd.service
 sudo systemctl restart spotifyd.service
+sudo systemctl restart jukebox.service
 sudo systemctl status spotifyd.service
+sudo systemctl status jukebox.service
 ```
 
-8. Restore the browser-capable machine's original `spotifyd` config if you temporarily replaced it:
+5. From another browser-capable device on the same network, open:
 
-```sh
-if [ -f /etc/spotifyd.conf.bak ]; then
-  sudo mv /etc/spotifyd.conf.bak /etc/spotifyd.conf
-else
-  sudo rm -f /etc/spotifyd.conf
-fi
+```text
+http://<pi-host>:<operator-port>/auth
 ```
 
-If you change `cache_path` later, repeat the OAuth step and copy the credential file to the new location.
+6. Start the auth flow from the browser page.
+7. If the helper surfaces an approval URL, open it in the browser, log in to Spotify, and approve the receiver.
+8. Refresh `/auth` and `status.json` until the helper reports success and the runtime clears `auth_required`.
+
+If you change `cache_path` later, rerun the same browser auth flow so `spotifyd authenticate` can refresh the receiver-side session material in the new location.
 
 Keep the receiver-side session/cache material separate from `/etc/jukebox/jukebox.env`.
 That env file is only for the Python app's controller-side Web API credentials and runtime settings.
@@ -420,7 +391,7 @@ Fill in:
 - `JUKEBOX_SPOTIFY_TARGET_DEVICE_NAME`
 - `JUKEBOX_SCANNER_DEVICE`
 
-Recommended EPIC 3 values:
+Recommended EPIC 4 values:
 
 ```dotenv
 JUKEBOX_INPUT_BACKEND=evdev
@@ -428,7 +399,9 @@ JUKEBOX_PLAYBACK_BACKEND=spotify
 JUKEBOX_LOG_FORMAT=json
 JUKEBOX_SPOTIFY_CONFIRM_TIMEOUT_SECONDS=5.0
 JUKEBOX_SPOTIFY_CONFIRM_POLL_INTERVAL_SECONDS=0.25
-JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS=5.0
+JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_COUNT=5
+JUKEBOX_SPOTIFY_DEVICE_PROBE_RETRY_INTERVAL_SECONDS=2.0
+JUKEBOX_HEALTH_POLL_INTERVAL_SECONDS=15.0
 ```
 
 The refresh token used by the Python app must include these Spotify Web API scopes:
@@ -473,6 +446,7 @@ The runtime health monitor may emit these degraded states while recovery is in p
 
 - `scanner_unavailable`
 - `controller_auth_unavailable`
+- `spotify_rate_limited`
 - `network_unavailable`
 - `receiver_unavailable`
 
