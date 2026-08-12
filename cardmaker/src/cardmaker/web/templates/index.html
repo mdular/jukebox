@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Jukebox Card Maker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <p class="eyebrow">QR Card Jukebox</p>
+        <h1>Card Maker</h1>
+        <p>Find one Spotify item, review its exact labels and URI, then create a verified PNG.</p>
+      </header>
+
+      <section id="discovery" aria-labelledby="discovery-heading">
+        <h2 id="discovery-heading">Choose music</h2>
+        <div class="discovery-grid">
+          <form id="search-form">
+            <label for="search-query">Search Spotify</label>
+            <div class="input-row">
+              <input id="search-query" name="q" type="search" maxlength="200" required>
+              <button type="submit">Search</button>
+            </div>
+          </form>
+
+          <form id="reference-form">
+            <label for="spotify-reference">Paste Spotify URL or URI</label>
+            <div class="input-row">
+              <input id="spotify-reference" name="reference" type="text" required>
+              <button type="submit">Resolve</button>
+            </div>
+          </form>
+        </div>
+        <p id="status" role="status" aria-live="polite"></p>
+        <div id="results" aria-live="polite"></div>
+      </section>
+
+      <section id="review" aria-labelledby="review-heading" hidden>
+        <h2 id="review-heading">Review selection</h2>
+        <div class="review-grid">
+          <img id="selected-artwork" class="selected-artwork" alt="">
+          <div>
+            <p id="selected-kind" class="eyebrow"></p>
+            <h3 id="selected-primary"></h3>
+            <p id="selected-secondary"></p>
+            <dl>
+              <dt>QR payload</dt>
+              <dd><code id="selected-uri"></code></dd>
+            </dl>
+            <p>
+              Metadata and artwork from
+              <a id="selected-spotify-link" target="_blank" rel="noopener noreferrer">Spotify</a>.
+            </p>
+            <p id="artwork-warning" class="error" hidden>
+              This item has no usable Spotify artwork, so the spike cannot render it.
+            </p>
+            <p id="resolution-warning" class="warning" hidden>
+              Spotify reports artwork smaller than its rendered size; the preview may look soft.
+            </p>
+            <button id="create-preview" type="button">Create preview</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="preview-section" aria-labelledby="preview-heading" hidden>
+        <h2 id="preview-heading">Verified preview</h2>
+        <p>Download uses this exact full-resolution image; it is not rendered again.</p>
+        <img id="preview" class="card-preview" alt="Generated Jukebox card preview">
+        <div class="preview-actions">
+          <a id="download" class="button" download>Download PNG</a>
+          <button id="make-another" class="secondary" type="button">Make another</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

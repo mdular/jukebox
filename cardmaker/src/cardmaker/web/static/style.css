@@ -1,0 +1,81 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f2ea;
+  color: #1d1d1b;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+main {
+  width: min(1100px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 5rem;
+}
+
+.page-header { max-width: 720px; margin-bottom: 2.5rem; }
+h1 { margin: 0; font-size: clamp(2.5rem, 8vw, 5rem); line-height: .95; }
+h2 { margin-top: 0; }
+.eyebrow { text-transform: uppercase; letter-spacing: .14em; font-weight: 700; }
+
+section {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid #cbc5b8;
+  border-radius: 1rem;
+  background: #fffdf8;
+}
+
+.discovery-grid, .review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1.5rem;
+}
+
+label { display: block; margin-bottom: .5rem; font-weight: 700; }
+.input-row { display: flex; gap: .5rem; }
+input { min-width: 0; flex: 1; padding: .75rem; font: inherit; }
+button, .button {
+  display: inline-block;
+  border: 0;
+  border-radius: .45rem;
+  padding: .75rem 1rem;
+  background: #111;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.secondary { background: #e6e0d4; color: #111; }
+
+.result-group { padding: 0; border: 0; }
+.result-list { display: grid; gap: .75rem; padding: 0; list-style: none; }
+.result-list li {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  padding: .75rem;
+  border: 1px solid #ddd6c8;
+  border-radius: .6rem;
+}
+.result-list img { width: 64px; height: 64px; object-fit: contain; background: #000; }
+.result-list li > div { display: grid; gap: .2rem; }
+
+.selected-artwork { width: 100%; max-height: 453px; object-fit: contain; background: #000; }
+code { overflow-wrap: anywhere; }
+.error { color: #a3271d; font-weight: 700; }
+.warning { color: #7b4b00; font-weight: 700; }
+.card-preview { display: block; width: 100%; height: auto; background: #000; }
+.preview-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+
+@media (max-width: 600px) {
+  .input-row { align-items: stretch; flex-direction: column; }
+  .result-list li { grid-template-columns: 48px 1fr; }
+  .result-list img { width: 48px; height: 48px; }
+  .result-list button { grid-column: 1 / -1; }
+}

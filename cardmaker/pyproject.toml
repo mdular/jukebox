@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jukebox-cardmaker"
+version = "0.1.0"
+description = "Isolated browser spike for creating QR Jukebox cards from Spotify catalog items."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "Flask>=3.1,<4",
+  "Pillow>=11,<13",
+  "segno>=1.6,<2",
+  "zxing-cpp>=2.3,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cardmaker*"]
+
+[tool.setuptools.package-data]
+cardmaker = [
+  "assets/fonts/*",
+  "web/static/*",
+  "web/templates/*",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+pythonpath = [".", "src", "../src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "tools"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+mypy_path = ["src", "../src"]
+strict = true

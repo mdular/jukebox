@@ -1,0 +1,52 @@
+{
+  "tracks": {
+    "items": [
+      {
+        "id": "2takcwOaAZWiXQijPHIx7B",
+        "type": "track",
+        "name": "Körperteil Blues",
+        "artists": [{"name": "Lichterkinder"}, {"name": "Gästin"}],
+        "album": {
+          "images": [
+            {"url": "https://i.scdn.co/small-track.jpg", "width": 64, "height": 64},
+            {"url": "https://i.scdn.co/large-track.jpg", "width": 640, "height": 640}
+          ]
+        },
+        "external_urls": {
+          "spotify": "https://open.spotify.com/track/2takcwOaAZWiXQijPHIx7B"
+        }
+      }
+    ]
+  },
+  "albums": {
+    "items": [
+      {
+        "id": "1ATL5GLyefJaxhQzSPVrLX",
+        "type": "album",
+        "name": "Kindischer Ozean",
+        "artists": [{"name": "Willy Astor"}],
+        "images": [
+          {"url": "https://i.scdn.co/album.jpg", "width": 640, "height": 640}
+        ],
+        "external_urls": {
+          "spotify": "https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX"
+        }
+      }
+    ]
+  },
+  "playlists": {
+    "items": [
+      {
+        "id": "37i9dQZF1DXcBWIGoYBM5M",
+        "type": "playlist",
+        "name": "Laternenlauf",
+        "images": [
+          {"url": "https://i.scdn.co/playlist.jpg", "width": 300, "height": 300}
+        ],
+        "external_urls": {
+          "spotify": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+        }
+      }
+    ]
+  }
+}
