@@ -40,6 +40,43 @@ def test_recovered_baseline_geometry_is_frozen() -> None:
     assert geometry.content_x == 756
     assert geometry.content_width == 404
     assert geometry.artwork_y == 40
+    assert geometry.artwork_height == 453
+    assert geometry.text_top_gap == 20
+    assert geometry.text_line_gap == 65
+    assert geometry.primary_font_size == 48
+    assert geometry.secondary_font_size == 42
+    assert geometry.minimum_font_size == 20
+
+
+def test_cm1_marker_geometry_is_frozen_at_the_bottom_left_anchor() -> None:
+    geometry = CardGeometry()
+
+    assert (geometry.marker_x, geometry.marker_y) == (756, 680)
+    assert geometry.marker_x == geometry.content_x
+    assert geometry.marker_y + geometry.marker_height == (
+        geometry.canvas_height - geometry.margin
+    )
+    assert geometry.marker_height == 36
+    assert geometry.marker_max_width == 56
+    assert geometry.marker_render_scale == 4
+    assert geometry.album_marker_size == 36
+    assert geometry.album_outline_width == 3
+    assert geometry.album_reflection_inset == 7
+    assert geometry.album_hub_size == 10
+    assert geometry.album_hole_size == 4
+    assert geometry.playlist_y_offset == 7
+    assert geometry.playlist_row_gap == 12
+    assert geometry.playlist_dot_size == 5
+    assert geometry.playlist_dash_x_offset == 11
+    assert geometry.playlist_dash_widths == (30, 34, 26)
+    assert geometry.playlist_dash_height == 4
+    assert geometry.track_dot_x_offset == 1
+    assert geometry.track_y_offset == 13
+    assert geometry.track_dot_size == 10
+    assert geometry.track_dash_x_offset == 17
+    assert geometry.track_dash_y_offset == 15
+    assert geometry.track_dash_width == 31
+    assert geometry.track_dash_height == 5
 
 
 def _nonblack_bounds(image: Image.Image) -> tuple[int, int, int, int]:

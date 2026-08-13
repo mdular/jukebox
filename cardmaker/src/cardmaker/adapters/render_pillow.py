@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from cardmaker.models import CardDraft
+from cardmaker.models import CardDraft, SpotifyKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,29 @@ class CardGeometry:
     primary_font_size: int = 48
     secondary_font_size: int = 42
     minimum_font_size: int = 20
+    marker_x: int = 756
+    marker_y: int = 680
+    marker_height: int = 36
+    marker_max_width: int = 56
+    marker_render_scale: int = 4
+    album_marker_size: int = 36
+    album_outline_width: int = 3
+    album_reflection_inset: int = 7
+    album_hub_size: int = 10
+    album_hole_size: int = 4
+    playlist_y_offset: int = 7
+    playlist_row_gap: int = 12
+    playlist_dot_size: int = 5
+    playlist_dash_x_offset: int = 11
+    playlist_dash_widths: tuple[int, int, int] = (30, 34, 26)
+    playlist_dash_height: int = 4
+    track_dot_x_offset: int = 1
+    track_y_offset: int = 13
+    track_dot_size: int = 10
+    track_dash_x_offset: int = 17
+    track_dash_y_offset: int = 15
+    track_dash_width: int = 31
+    track_dash_height: int = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +125,127 @@ class PillowCardRenderer:
                 font=secondary_font,
                 fill=(255, 255, 255),
             )
+        _draw_content_marker(card, draft.item.reference.kind, geometry)
         return card
+
+
+def _draw_content_marker(
+    card: Image.Image, kind: SpotifyKind, geometry: CardGeometry
+) -> None:
+    """Draw a smooth supported-content symbol at the bottom-left anchor."""
+
+    scale = geometry.marker_render_scale
+    mask = Image.new(
+        "L",
+        (geometry.marker_max_width * scale, geometry.marker_height * scale),
+        0,
+    )
+    draw = ImageDraw.Draw(mask)
+
+    def box(left: int, top: int, right: int, bottom: int) -> tuple[int, int, int, int]:
+        return (
+            left * scale,
+            top * scale,
+            (right * scale) - 1,
+            (bottom * scale) - 1,
+        )
+
+    if kind == "album":
+        size = geometry.album_marker_size
+        draw.ellipse(
+            box(1, 1, size - 1, size - 1),
+            outline=255,
+            width=geometry.album_outline_width * scale,
+        )
+        reflection_inset = geometry.album_reflection_inset
+        draw.pieslice(
+            box(
+                reflection_inset,
+                reflection_inset,
+                size - reflection_inset,
+                size - reflection_inset,
+            ),
+            start=300,
+            end=344,
+            fill=210,
+        )
+        hub_inset = (size - geometry.album_hub_size) // 2
+        draw.ellipse(
+            box(
+                hub_inset,
+                hub_inset,
+                hub_inset + geometry.album_hub_size,
+                hub_inset + geometry.album_hub_size,
+            ),
+            fill=255,
+        )
+        hole_inset = (size - geometry.album_hole_size) // 2
+        draw.ellipse(
+            box(
+                hole_inset,
+                hole_inset,
+                hole_inset + geometry.album_hole_size,
+                hole_inset + geometry.album_hole_size,
+            ),
+            fill=0,
+        )
+
+    elif kind == "playlist":
+        dot_size = geometry.playlist_dot_size
+        dash_x = geometry.playlist_dash_x_offset
+        for row, dash_width in enumerate(geometry.playlist_dash_widths):
+            row_y = geometry.playlist_y_offset + (row * geometry.playlist_row_gap)
+            draw.ellipse(
+                box(0, row_y, dot_size, row_y + dot_size),
+                fill=255,
+            )
+            draw.rounded_rectangle(
+                box(
+                    dash_x,
+                    row_y,
+                    dash_x + dash_width,
+                    row_y + geometry.playlist_dash_height,
+                ),
+                radius=(geometry.playlist_dash_height * scale) // 2,
+                fill=255,
+            )
+
+    elif kind == "track":
+        dot_x = geometry.track_dot_x_offset
+        row_y = geometry.track_y_offset
+        draw.ellipse(
+            box(
+                dot_x,
+                row_y,
+                dot_x + geometry.track_dot_size,
+                row_y + geometry.track_dot_size,
+            ),
+            fill=255,
+        )
+        draw.rounded_rectangle(
+            box(
+                geometry.track_dash_x_offset,
+                geometry.track_dash_y_offset,
+                geometry.track_dash_x_offset + geometry.track_dash_width,
+                geometry.track_dash_y_offset + geometry.track_dash_height,
+            ),
+            radius=(geometry.track_dash_height * scale) // 2,
+            fill=255,
+        )
+
+    else:
+        raise ValueError(f"Unsupported content marker kind: {kind}")
+
+    smooth_mask = mask.resize(
+        (geometry.marker_max_width, geometry.marker_height),
+        Image.Resampling.LANCZOS,
+    )
+    marker = Image.new(
+        "RGB",
+        (geometry.marker_max_width, geometry.marker_height),
+        (255, 255, 255),
+    )
+    card.paste(marker, (geometry.marker_x, geometry.marker_y), smooth_mask)
 
 
 def fit_text(

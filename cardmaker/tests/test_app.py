@@ -33,16 +33,48 @@ def test_index_serves_plain_authoring_shell_without_secrets(
     assert response.status_code == 200
     assert b"Search Spotify" in response.data
     assert b"Paste Spotify URL or URI" in response.data
-    assert b"Create preview" in response.data
+    assert response.data.count(b">Download PNG<") == 1
     assert b"Make another" in response.data
+    assert b'id="card-preview"' in response.data
+    assert b'width="600"' in response.data
+    assert b'height="378"' in response.data
+    assert b"Encoded URI" in response.data
+    assert b"Credits" in response.data
+    assert b'id="preview-status"' in response.data
+    assert b'role="status"' in response.data
     assert b"Spotify" in response.data
     assert b"may look soft" in response.data
+    assert b"Create preview" not in response.data
+    assert response.data.index(b'id="card-preview"') < response.data.index(b"Encoded URI")
+    assert response.data.index(b"Encoded URI") < response.data.index(b">Download PNG<")
     assert b"CARDMAKER_SPOTIFY_CLIENT_SECRET" not in response.data
     assert b"/static/app.js" in response.data
 
     script = client.get("/static/app.js")
     assert script.status_code == 200
     assert b"isLowResolution" in script.data
+    assert b"AbortController" in script.data
+    assert b"X-Cardmaker-Spotify-URI" in script.data
+    assert b"X-Cardmaker-Width" in script.data
+    assert b"X-Cardmaker-Height" in script.data
+    assert b"responseUri !== elements.selectedUri.textContent" in script.data
+    assert b"URL.createObjectURL" in script.data
+    assert b"URL.revokeObjectURL" in script.data
+    assert script.data.count(b'fetch("/api/render"') == 1
+    assert script.data.count(b"response.blob()") == 1
+    assert script.data.count(b"downloadLink.click()") == 1
+    assert b"previewObjectUrl" in script.data
+    assert b"if (item.artwork) void renderPreview(item.uri)" in script.data
+    assert b"createPreview" not in script.data
+
+    stylesheet = client.get("/static/style.css")
+    assert stylesheet.status_code == 200
+    assert b".discovery-grid, .review-layout" in stylesheet.data
+    assert b"repeat(auto-fit, minmax(min(100%, 320px), 1fr))" in stylesheet.data
+    assert b".card-preview" in stylesheet.data
+    assert b"width: 100%" in stylesheet.data
+    assert b"max-width: 100%" in stylesheet.data
+    assert b".review-metadata" in stylesheet.data
 
 
 def test_health_is_local_and_never_calls_the_service(
@@ -112,7 +144,7 @@ def test_resolve_accepts_only_one_string_reference(
         assert rejected.get_json()["code"] == "invalid_request"
 
 
-def test_render_accepts_only_uri_and_returns_inline_verified_png(
+def test_render_accepts_only_uri_and_returns_attachment_verified_png(
     client: FlaskClient, service: StubService
 ) -> None:
     response = client.post("/api/render", json={"uri": URI})
@@ -122,7 +154,9 @@ def test_render_accepts_only_uri_and_returns_inline_verified_png(
     assert response.data == service.rendered.png_bytes
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Cardmaker-Spotify-URI"] == URI
-    assert "inline" in response.headers["Content-Disposition"]
+    assert response.headers["X-Cardmaker-Width"] == "1200"
+    assert response.headers["X-Cardmaker-Height"] == "756"
+    assert "attachment" in response.headers["Content-Disposition"]
     assert "Lichterkinder" in response.headers["Content-Disposition"]
     assert service.calls == [("render", URI)]
 

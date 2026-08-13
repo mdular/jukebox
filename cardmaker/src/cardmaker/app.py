@@ -91,7 +91,7 @@ def create_app(
         response = send_file(
             BytesIO(rendered.png_bytes),
             mimetype="image/png",
-            as_attachment=False,
+            as_attachment=True,
             download_name=rendered.filename,
             max_age=0,
         )

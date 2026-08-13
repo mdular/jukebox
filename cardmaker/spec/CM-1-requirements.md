@@ -10,10 +10,10 @@ This document defines the requirements for CM-1 from
 [`cardmaker-roadmap.md`](cardmaker-roadmap.md). It turns the implemented browser
 spike into the smallest complete Card Maker for Spotify-provided artwork.
 
-This is a requirements document, not a technical design. It defines the direct
-download workflow, content-type distinction, final layout approval, and live and
-physical evidence required before the Spotify-artwork MVP can be treated as
-complete.
+This is a requirements document, not a technical design. It defines the immediate
+selection-preview workflow, content-type distinction, final layout approval, and
+live and physical evidence required before the Spotify-artwork MVP can be treated
+as complete.
 
 The implemented behavior and open evidence recorded in
 [`../findings/spike-validation.md`](../findings/spike-validation.md) are the CM-1
@@ -24,18 +24,19 @@ still require review.
 ## Objective
 
 Deliver a trustworthy one-card-at-a-time workflow in which an adult can select a
-Spotify track, album, or playlist, review its complete metadata and artwork, and
-use one action to download a verified, visibly type-specific card that has been
-validated through the real print, laminate, and scan workflow.
+Spotify track, album, or playlist, immediately review its verified card in a
+responsive layout with complete metadata, and download those exact bytes for the
+real print, laminate, and scan workflow.
 
 ## Success Definition
 
 CM-1 is complete when all of the following are true:
 
-- The selection review offers one primary `Download PNG` action and no separate
-  preview-generation or second download step.
+- Selecting an item immediately renders and verifies its card, displays the exact
+  PNG responsively at up to 50% size, and lets `Download PNG` reuse those bytes
+  without a second render.
 - Track, album, and playlist cards use their specified geometric markers at the
-  same third-line anchor without changing the locked QR geometry.
+  same bottom-left anchor without changing the locked QR geometry.
 - One deterministic text-overflow and typography rule has been selected,
   documented, and covered by stable visual and geometry checks.
 - The downloaded image is the same image that was rendered and independently QR
@@ -53,11 +54,13 @@ and the preferred default is marked `(Recommended)`.
 
 ### D-1 Download Interaction
 
-The concept replaces the spike's two-step preview and download interaction with
-one action from the selection review.
+The review should show the finished card without asking for a separate creation
+step, while download must remain a deliberate adult action.
 
-- [x] Render, verify, and immediately download through one primary `Download PNG`
-  action. (Recommended)
+- [x] Render and verify immediately on selection, show the exact PNG responsively
+  at up to 50% size, and let `Download PNG` reuse those bytes. (Recommended)
+- [ ] Render, verify, and immediately download through one primary `Download PNG`
+  action.
 - [ ] Keep a separate `Create preview` action followed by a download action.
 - [ ] Download without showing the selected URI, labels, artwork, and content type
   first.
@@ -67,8 +70,9 @@ one action from the selection review.
 The card must reveal likely playback scope without relying on extra text or
 changing the established label and QR regions.
 
-- [x] Use a disc circle for albums, three stacked dot-dash rows for playlists, and
-  a right-pointing play mark with a short heavy dash for tracks. (Recommended)
+- [x] Use refined, smoothly rendered bottom-left symbols: a disc with a hub and
+  reflection wedge for albums, three stacked dot-dash rows for playlists, and a
+  single enlarged dot-dash row for tracks. (Selected after marker review)
 - [ ] Use text labels for the three content types.
 - [ ] Omit content-type distinction from the downloaded card.
 
@@ -110,8 +114,8 @@ physical card workflow.
 
 ## In Scope
 
-- Replacing the spike's intermediate preview action with direct verified download
-  from the selection review.
+- Replacing the spike's explicit preview action with an immediate responsive
+  verified preview; download reuses the preview bytes.
 - Keeping the adult's current selection and error context usable after a successful
   or failed download attempt.
 - Adding the fixed album, playlist, and track marker meanings from the concept.
@@ -152,24 +156,28 @@ Requirements:
 - The review shall show the selected Spotify artwork and the content type.
 - The review shall retain Spotify attribution and a link to the selected Spotify
   entity.
+- Selecting an item with usable artwork shall immediately render and show its
+  verified card preview responsively at up to 50% size.
+- The metadata and action panel shall sit beside the preview at typical
+  desktop/tablet widths and stack below it on narrow/mobile widths.
 - The review shall make `Download PNG` the single primary card-production action.
 
 Related decision: `D-1 Download Interaction`.
 
-### FR-2 Direct Verified Download
+### FR-2 Immediate Verified Preview and Download
 
-One adult action shall compose, verify, and download the selected card.
+One render shall supply both the reviewed preview and the downloaded card.
 
 Requirements:
 
-- Activating `Download PNG` shall render the full-resolution card and independently
-  decode its QR before the browser starts the download.
+- Selecting an item shall render the full-resolution card and independently decode
+  its QR before the browser shows the preview or enables download.
 - The QR decode shall exactly equal the normalized Spotify URI shown in the
   selection review.
-- The downloaded PNG shall be the same verified render produced by that action;
-  the application shall not perform an unreviewed second render for download.
-- A render or QR-verification failure shall prevent download and present an honest,
-  usable error on the current selection.
+- The downloaded PNG shall be the same verified render displayed in the preview;
+  the application shall not perform a second render for download.
+- A render or QR-verification failure shall prevent preview and download and
+  present an honest, usable error on the current selection.
 - The browser shall not require a separate `Create preview` action or expose a
   second download control.
 
@@ -185,7 +193,7 @@ Requirements:
 - A successful download shall leave a clear path to make another card.
 - A failed download shall preserve enough of the current selection to understand
   the failure and retry or choose another item.
-- Resetting for another card shall release the prior downloaded-image state without
+- Resetting for another card shall release the prior preview-image state without
   requiring a server restart.
 - Search, pasted-reference, and selection behavior from the spike shall remain
   available after a prior success or failure.
@@ -196,13 +204,15 @@ Each downloaded card shall carry the marker assigned to its Spotify content type
 
 Requirements:
 
-- An album card shall show a disc-circle marker.
+- An album card shall show a disc marker with a center hub and reflection wedge.
 - A playlist card shall show three stacked dot-dash rows.
-- A track card shall show a right-pointing play mark with a short heavy dash.
-- The markers shall be white deterministic geometry rather than font glyphs.
-- Every marker shall use the same left anchor and third-line vertical position.
-- A playlist marker shall occupy that third-line position even though a playlist
-  has no secondary label.
+- A track card shall show one enlarged dot-dash row.
+- The markers shall use smooth white deterministic geometry rather than font
+  glyphs.
+- Every marker shall share the content column's bottom-left anchor and bottom
+  alignment.
+- Marker placement shall leave clear vertical separation from the title and
+  optional secondary label.
 - The marker shall remain visually subordinate to the artwork and labels and shall
   not overlap them.
 
@@ -293,7 +303,7 @@ Related decision: `D-5 Physical Release Gate`.
 - Repeated rendering of the same controlled input shall produce the approved
   geometry, marker, label, artwork, and QR result.
 - Automated checks shall cover each marker type, the selected overflow behavior,
-  direct-download HTTP behavior, independent QR verification, and the locked layout
+  preview/download HTTP behavior, independent QR verification, and the locked layout
   anchors.
 - The approved deterministic fixture shall change only as part of the reviewed
   CM-1 layout approval.
@@ -327,13 +337,15 @@ Related decision: `D-5 Physical Release Gate`.
 
 ## Acceptance Criteria
 
-### AC-1 One-Step Download
+### AC-1 Immediate Preview and Reused Download
 
-- Given an adult has selected and reviewed a supported Spotify item
-- When they activate `Download PNG`
+- Given an adult selects a supported Spotify item with usable artwork
+- When the selection review opens
 - Then the application renders and independently verifies one full-resolution card
-- And the browser immediately starts downloading that verified PNG
-- And no separate preview-generation or second download action is required.
+- And displays that exact PNG in a responsive review where metadata and actions sit
+  beside it at typical desktop/tablet widths and stack below it on narrow/mobile
+  widths
+- And activating `Download PNG` downloads those bytes without a second render.
 
 ### AC-2 Verification Failure
 
@@ -347,23 +359,24 @@ Related decision: `D-5 Physical Release Gate`.
 
 - Given a selected Spotify track
 - When its card is downloaded
-- Then the card shows the right-pointing play mark with a short heavy dash at the
-  shared third-line anchor
+- Then the card shows one enlarged dot-dash row at the
+  shared bottom-left anchor
 - And the QR panel and label anchors remain unchanged.
 
 ### AC-4 Album Marker
 
 - Given a selected Spotify album
 - When its card is downloaded
-- Then the card shows the disc-circle marker at the shared third-line anchor
+- Then the card shows the disc marker with its hub and reflection wedge at the
+  shared bottom-left anchor
 - And the QR panel and label anchors remain unchanged.
 
 ### AC-5 Playlist Marker
 
 - Given a selected Spotify playlist with no secondary label
 - When its card is downloaded
-- Then the card shows three stacked dot-dash rows at the same third-line anchor used
-  by track and album cards
+- Then the card shows three stacked dot-dash rows at the same bottom-left anchor
+  used by track and album cards
 - And no secondary text is invented.
 
 ### AC-6 Long Label
@@ -415,14 +428,16 @@ Related decision: `D-5 Physical Release Gate`.
 
 - Given the final CM-1 layout and workflow have been approved
 - When the Card Maker automated checks run
-- Then direct download, all three markers, the accepted overflow rule, exact QR
-  verification, locked geometry, Spotify no-crop behavior, and existing discovery
-  behavior pass.
+- Then immediate verified preview, download-byte reuse, all three markers, the
+  accepted overflow rule, exact QR verification, locked geometry, Spotify no-crop
+  behavior, and existing discovery behavior pass.
 
 ## Deliverables
 
-- A selection-review flow with one direct, verified `Download PNG` action.
-- Deterministic album, playlist, and track markers in the locked card layout.
+- A responsive selection-review flow with an immediate verified preview and
+  download reuse of those exact bytes.
+- Refined deterministic album, playlist, and track markers at the bottom-left of
+  the locked card layout.
 - A selected and documented typography, offset, overflow, and width baseline.
 - Updated automated behavior, geometry, and approved-fixture coverage.
 - One recorded live example and independent decoder result for each supported

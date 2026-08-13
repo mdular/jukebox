@@ -74,11 +74,13 @@ The expected flow is:
    label metadata.
 5. The adult selects Spotify-provided artwork, uploads an image they may use, or
    creates an original cover from an adult-authored description.
-6. The selection review shows the exact URI, wording, artwork, and content type.
-7. The adult chooses one primary `Download PNG` action. The tool composes and
-   verifies the card, then starts the PNG download immediately; there is no
-   separate `Create preview` step or second download action.
-8. The adult reviews the downloaded card, then prints, cuts, and laminates it
+6. Selecting an item composes and verifies the card immediately, then shows that
+   exact PNG responsively in the selection review, up to 50% size.
+7. The encoded URI, Spotify credits, and `Download PNG` / `Make another` controls
+   sit beside the preview at typical desktop/tablet widths and stack below it on
+   narrow/mobile widths. Download reuses the verified preview bytes without a
+   second render.
+8. The adult reviews and downloads the card, then prints, cuts, and laminates it
    using the already validated physical workflow.
 
 The tool should prefer sensible defaults and a single clear primary action at each
@@ -91,7 +93,7 @@ The supported content types remain aligned with the jukebox parser:
 | Spotify type | QR payload | Primary label | Secondary label | Type marker | Default artwork |
 | --- | --- | --- | --- | --- | --- |
 | Playlist | `spotify:playlist:<id>` | Playlist title | None | Three stacked dot-dash rows | Playlist image |
-| Track | `spotify:track:<id>` | Artist | Track title | Right-pointing play mark with a short heavy dash | Track's album artwork |
+| Track | `spotify:track:<id>` | Artist | Track title | One enlarged dot-dash row | Track's album artwork |
 | Album | `spotify:album:<id>` | Artist | Album title | Disc circle | Album artwork |
 
 Multiple credited artists should be presented using Spotify's supplied metadata,
@@ -187,18 +189,20 @@ the reference pixels form the baseline:
 - primary line: bold
 - secondary line: regular
 - playlist cards: one bold title line and no invented secondary text
-- content-type marker: white, left-aligned with the text and artwork, on a third
-  fixed line below the label area
+- content-type marker: a small, refined white symbol aligned to the content
+  column's bottom-left, clearly separated from the label area
 
 The content-type marker is the one intentional addition to the golden-master
 layout. It makes the likely playback scope apparent before scanning: a disc circle
-for an album, three stacked dot-dash rows for a playlist, and a right-pointing play
-mark with a short heavy dash for a track. The marks should be drawn as simple
+for an album, three stacked dot-dash rows for a playlist, and one enlarged dot-dash
+row for a track. The marks should be drawn as simple
 geometry rather than font glyphs so they render consistently. They must remain
 small and visually subordinate to the labels, use the same left anchor for every
-content type, and occupy the same third-line vertical position even when a
-playlist has no secondary label. Exact dimensions, stroke widths, and spacing
-should be settled with side-by-side rendered comparisons.
+content type, and share the same bottom-left alignment even when a playlist has no
+secondary label. The album disc includes a hub and reflection wedge so it does not
+read as a letter `O`; all symbols use smooth deterministic geometry. Exact
+dimensions, stroke widths, and spacing should be settled with side-by-side
+rendered comparisons.
 
 The exact QR module scale, quiet zone, corner radius, font files, font sizes, and
 vertical text offsets must be recovered by comparison with the golden masters.
@@ -256,10 +260,10 @@ and layout. A deterministic SVG or other vector intermediate is acceptable if it
 helps preserve QR sharpness, but the adult should not need a graphics application
 to obtain the final PNG.
 
-From the selection review, the primary action must return that PNG as a download
-in one operation. Rendering and QR validation may happen as part of the action,
-but the browser must not require the adult to create an intermediate preview and
-then click a second download control.
+Selecting an item must render and validate that PNG once, display it immediately
+at up to 50% size with a responsive adjacent-or-stacked review layout, and keep its
+exact bytes for the primary `Download PNG` action. The browser must not perform a
+second render for download.
 
 A printer-friendly A4 sheet and PDF export are natural follow-ups after the single
 card output and physical scale are validated.
@@ -304,8 +308,8 @@ The implementation should retain narrow internal boundaries:
 - `QrEncoder`: produce and verify the exact Spotify URI QR
 - `CardRenderer`: compose a deterministic card from a typed draft and locked
   geometry
-- browser UI: coordinate search, selection, cover choice, selection review, and
-  direct download
+- browser UI: coordinate search, selection, cover choice, immediate preview, and
+  download
 
 The existing lightweight operator HTTP server is a possible host, but the
 Card Maker should first prove itself independently. The core catalog, QR, and
@@ -319,9 +323,9 @@ cards appear visually compatible with the previously created cards in side-by-si
 PNG comparison. This is useful layout evidence, but it does not replace validation
 with the physical scanner, established print scaling, and lamination.
 
-The spike also exposed two UX refinements now incorporated above: downloading
-directly from the selection review, and adding a small third-line marker so the
-content type is apparent before scanning.
+The spike also exposed two UX refinements now incorporated above: showing the
+verified card immediately in the selection review, and adding a small bottom-left
+marker so the content type is apparent before scanning.
 
 ### Question to Answer
 
@@ -347,8 +351,8 @@ runtime:
 6. Use only Spotify-provided artwork during the spike.
 7. Generate a standard QR containing the normalized Spotify URI.
 8. Compose a 1200 x 756 PNG using the recovered golden-master geometry.
-9. Provide one `Download PNG` action that renders, verifies, and immediately
-   downloads the full-resolution card without a separate preview-generation step.
+9. Render and verify on selection, show the exact PNG responsively at up to 50%
+   size, and let `Download PNG` reuse those bytes without a second render.
 
 Using Pillow for PNG composition and Segno for QR generation is an acceptable
 spike choice. Both should be isolated as Card Maker dependencies so the jukebox
@@ -371,8 +375,8 @@ The spike succeeds only if:
 - a live search can select at least one track, one album, and one playlist
 - each result produces the correct supported Spotify URI
 - track, album, and playlist labels follow the defined metadata mapping
-- each supported type renders its specified third-line marker at the shared
-  left-aligned anchor
+- each supported type renders its specified refined marker at the shared
+  bottom-left anchor
 - Unicode text such as German names renders correctly
 - the output is exactly 1200 x 756 pixels
 - the QR panel and content-column anchors match the golden-master coordinates

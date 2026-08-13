@@ -12,7 +12,7 @@
       <header class="page-header">
         <p class="eyebrow">QR Card Jukebox</p>
         <h1>Card Maker</h1>
-        <p>Find one Spotify item, review its exact labels and URI, then create a verified PNG.</p>
+        <p>Find one Spotify item, review its finished card, then download the verified PNG.</p>
       </header>
 
       <section id="discovery" aria-labelledby="discovery-heading">
@@ -40,38 +40,40 @@
 
       <section id="review" aria-labelledby="review-heading" hidden>
         <h2 id="review-heading">Review selection</h2>
-        <div class="review-grid">
-          <img id="selected-artwork" class="selected-artwork" alt="">
-          <div>
+        <div class="review-layout">
+          <img
+            id="card-preview"
+            class="card-preview"
+            width="600"
+            height="378"
+            alt="Verified Jukebox card preview"
+            hidden
+          >
+          <div class="review-metadata">
             <p id="selected-kind" class="eyebrow"></p>
             <h3 id="selected-primary"></h3>
             <p id="selected-secondary"></p>
             <dl>
-              <dt>QR payload</dt>
+              <dt>Encoded URI</dt>
               <dd><code id="selected-uri"></code></dd>
+              <dt>Credits</dt>
+              <dd>
+                Metadata and artwork from
+                <a id="selected-spotify-link" target="_blank" rel="noopener noreferrer">Spotify</a>.
+              </dd>
             </dl>
-            <p>
-              Metadata and artwork from
-              <a id="selected-spotify-link" target="_blank" rel="noopener noreferrer">Spotify</a>.
-            </p>
             <p id="artwork-warning" class="error" hidden>
-              This item has no usable Spotify artwork, so the spike cannot render it.
+              This item has no usable Spotify artwork, so Card Maker cannot render it.
             </p>
             <p id="resolution-warning" class="warning" hidden>
-              Spotify reports artwork smaller than its rendered size; the preview may look soft.
+              Spotify reports artwork smaller than its rendered size; the downloaded card may look soft.
             </p>
-            <button id="create-preview" type="button">Create preview</button>
+            <div class="review-actions">
+              <button id="download-png" type="button" disabled>Download PNG</button>
+              <button id="make-another" class="secondary" type="button">Make another</button>
+            </div>
+            <p id="preview-status" role="status" aria-live="polite" aria-atomic="true"></p>
           </div>
-        </div>
-      </section>
-
-      <section id="preview-section" aria-labelledby="preview-heading" hidden>
-        <h2 id="preview-heading">Verified preview</h2>
-        <p>Download uses this exact full-resolution image; it is not rendered again.</p>
-        <img id="preview" class="card-preview" alt="Generated Jukebox card preview">
-        <div class="preview-actions">
-          <a id="download" class="button" download>Download PNG</a>
-          <button id="make-another" class="secondary" type="button">Make another</button>
         </div>
       </section>
     </main>

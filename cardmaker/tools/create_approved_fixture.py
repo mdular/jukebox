@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the synthetic artwork and initial approved renderer fixture once."""
+"""Create the synthetic artwork and approved renderer fixture once."""
 
 from __future__ import annotations
 
@@ -22,10 +22,15 @@ def main() -> int:
         type=Path,
         default=Path(__file__).parents[1] / "tests" / "fixtures",
     )
+    parser.add_argument(
+        "--replace-approved",
+        action="store_true",
+        help="Deliberately replace the approved card after a reviewed layout change.",
+    )
     args = parser.parse_args()
     artwork_path = args.fixture_root / "artwork" / "fixture-cover.png"
     approved_path = args.fixture_root / "approved-card.png"
-    if approved_path.exists():
+    if approved_path.exists() and not args.replace_approved:
         raise SystemExit(f"Refusing to overwrite approved fixture: {approved_path}")
     approved_path.parent.mkdir(parents=True, exist_ok=True)
 

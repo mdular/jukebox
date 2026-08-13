@@ -1,14 +1,18 @@
 "use strict";
 
+const EXPECTED_CARD_WIDTH = "1200";
+const EXPECTED_CARD_HEIGHT = "756";
+
 const elements = {
+  discovery: document.querySelector("#discovery"),
   searchForm: document.querySelector("#search-form"),
   searchQuery: document.querySelector("#search-query"),
   referenceForm: document.querySelector("#reference-form"),
   spotifyReference: document.querySelector("#spotify-reference"),
-  status: document.querySelector("#status"),
+  discoveryStatus: document.querySelector("#status"),
   results: document.querySelector("#results"),
   review: document.querySelector("#review"),
-  selectedArtwork: document.querySelector("#selected-artwork"),
+  cardPreview: document.querySelector("#card-preview"),
   selectedKind: document.querySelector("#selected-kind"),
   selectedPrimary: document.querySelector("#selected-primary"),
   selectedSecondary: document.querySelector("#selected-secondary"),
@@ -16,31 +20,31 @@ const elements = {
   selectedSpotifyLink: document.querySelector("#selected-spotify-link"),
   artworkWarning: document.querySelector("#artwork-warning"),
   resolutionWarning: document.querySelector("#resolution-warning"),
-  createPreview: document.querySelector("#create-preview"),
-  previewSection: document.querySelector("#preview-section"),
-  preview: document.querySelector("#preview"),
-  download: document.querySelector("#download"),
+  downloadPng: document.querySelector("#download-png"),
+  previewStatus: document.querySelector("#preview-status"),
   makeAnother: document.querySelector("#make-another"),
 };
 
 let selectedItem = null;
+let activeRenderController = null;
 let previewObjectUrl = null;
+let previewFilename = null;
 
 elements.searchForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  clearStatus();
+  clearDiscoveryStatus();
   try {
     const query = elements.searchQuery.value.trim();
     const payload = await requestJson(`/api/search?q=${encodeURIComponent(query)}`);
     showResults(payload.items);
   } catch (error) {
-    showError(error);
+    showDiscoveryError(error);
   }
 });
 
 elements.referenceForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  clearStatus();
+  clearDiscoveryStatus();
   try {
     const payload = await requestJson("/api/resolve", {
       method: "POST",
@@ -49,46 +53,42 @@ elements.referenceForm.addEventListener("submit", async (event) => {
     });
     selectItem(payload.item);
   } catch (error) {
-    showError(error);
+    showDiscoveryError(error);
   }
 });
 
-elements.createPreview.addEventListener("click", async () => {
-  if (!selectedItem || !selectedItem.artwork) return;
-  clearStatus();
-  elements.createPreview.disabled = true;
+elements.downloadPng.addEventListener("click", () => {
+  if (!previewObjectUrl || !previewFilename) return;
+
+  const downloadLink = document.createElement("a");
   try {
-    const response = await fetch("/api/render", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({uri: selectedItem.uri}),
-    });
-    if (!response.ok) throw await responseError(response);
-    const blob = await response.blob();
-    releasePreview();
-    previewObjectUrl = URL.createObjectURL(blob);
-    elements.preview.src = previewObjectUrl;
-    elements.download.href = previewObjectUrl;
-    elements.download.download = suggestedFilename(response.headers.get("Content-Disposition"));
-    elements.previewSection.hidden = false;
-    elements.previewSection.scrollIntoView({behavior: "smooth", block: "start"});
-  } catch (error) {
-    showError(error);
+    downloadLink.href = previewObjectUrl;
+    downloadLink.download = previewFilename;
+    downloadLink.hidden = true;
+    document.body.append(downloadLink);
+    downloadLink.click();
+    elements.previewStatus.textContent = "Download started. Review the PNG before printing.";
   } finally {
-    elements.createPreview.disabled = !selectedItem?.artwork;
+    downloadLink.remove();
   }
 });
 
 elements.makeAnother.addEventListener("click", () => {
+  abortActiveRender();
   releasePreview();
   selectedItem = null;
+  clearPreviewStatus();
+  clearSelectionReview();
+  elements.downloadPng.disabled = true;
   elements.review.hidden = true;
-  elements.previewSection.hidden = true;
-  document.querySelector("#discovery").scrollIntoView({behavior: "smooth", block: "start"});
+  elements.discovery.scrollIntoView({behavior: "smooth", block: "start"});
   elements.searchQuery.focus();
 });
 
-window.addEventListener("beforeunload", releasePreview);
+window.addEventListener("beforeunload", () => {
+  abortActiveRender();
+  releasePreview();
+});
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -108,7 +108,7 @@ async function responseError(response) {
 function showResults(items) {
   elements.results.replaceChildren();
   if (items.length === 0) {
-    elements.status.textContent = "No Spotify results found.";
+    elements.discoveryStatus.textContent = "No Spotify results found.";
     return;
   }
 
@@ -163,36 +163,96 @@ function resultRow(item) {
 }
 
 function selectItem(item) {
+  abortActiveRender();
   releasePreview();
   selectedItem = item;
-  elements.previewSection.hidden = true;
+  clearPreviewStatus();
   elements.selectedKind.textContent = item.kind;
   elements.selectedPrimary.textContent = item.primary_label;
   elements.selectedSecondary.textContent = item.secondary_label || "";
   elements.selectedSecondary.hidden = !item.secondary_label;
   elements.selectedUri.textContent = item.uri;
   elements.selectedSpotifyLink.href = item.external_url;
-  elements.selectedArtwork.hidden = !item.artwork;
   elements.artworkWarning.hidden = Boolean(item.artwork);
   elements.resolutionWarning.hidden = !isLowResolution(item.artwork);
-  elements.createPreview.disabled = !item.artwork;
-  if (item.artwork) {
-    elements.selectedArtwork.src = item.artwork.url;
-    elements.selectedArtwork.alt = `Spotify artwork for ${item.primary_label}`;
-  } else {
-    elements.selectedArtwork.removeAttribute("src");
-    elements.selectedArtwork.alt = "";
-  }
+  elements.downloadPng.disabled = true;
   elements.review.hidden = false;
   elements.review.scrollIntoView({behavior: "smooth", block: "start"});
+  if (item.artwork) void renderPreview(item.uri);
+}
+
+async function renderPreview(selectedUri) {
+  const controller = new AbortController();
+  activeRenderController = controller;
+  elements.previewStatus.textContent = "Rendering and verifying the preview…";
+
+  try {
+    const response = await fetch("/api/render", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({uri: selectedUri}),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw await responseError(response);
+
+    requireVerifiedResponse(response, selectedUri);
+    const blob = await response.blob();
+    if (controller.signal.aborted || !isCurrentSelection(selectedUri)) return;
+    if (blob.type.toLowerCase() !== "image/png") throw integrityError();
+
+    previewObjectUrl = URL.createObjectURL(blob);
+    previewFilename = suggestedFilename(response.headers.get("Content-Disposition"));
+    elements.cardPreview.src = previewObjectUrl;
+    elements.cardPreview.hidden = false;
+    elements.downloadPng.disabled = false;
+    elements.previewStatus.textContent = "Preview verified and ready to download.";
+  } catch (error) {
+    releasePreview();
+    if (!isAbortError(error) && isCurrentSelection(selectedUri)) {
+      showPreviewError(error);
+    }
+  } finally {
+    if (activeRenderController === controller) activeRenderController = null;
+  }
+}
+
+function requireVerifiedResponse(response, expectedUri) {
+  const contentType = (response.headers.get("Content-Type") || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  const responseUri = response.headers.get("X-Cardmaker-Spotify-URI");
+  const width = response.headers.get("X-Cardmaker-Width");
+  const height = response.headers.get("X-Cardmaker-Height");
+  if (
+    contentType !== "image/png" ||
+    responseUri !== expectedUri ||
+    responseUri !== selectedItem?.uri ||
+    responseUri !== elements.selectedUri.textContent ||
+    width !== EXPECTED_CARD_WIDTH ||
+    height !== EXPECTED_CARD_HEIGHT
+  ) {
+    throw integrityError();
+  }
+}
+
+function integrityError() {
+  return new Error("The card response failed an integrity check. Nothing was downloaded.");
 }
 
 function suggestedFilename(disposition) {
   if (!disposition) return "card.png";
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (encoded) return decodeURIComponent(encoded[1]);
+  if (encoded) {
+    try {
+      const decoded = decodeURIComponent(encoded[1]).trim();
+      if (decoded) return decoded;
+    } catch (_error) {
+      // Fall through to a usable plain filename when one is present.
+    }
+  }
   const plain = disposition.match(/filename="?([^";]+)"?/i);
-  return plain ? plain[1] : "card.png";
+  return plain && plain[1].trim() ? plain[1].trim() : "card.png";
 }
 
 function isLowResolution(artwork) {
@@ -202,19 +262,57 @@ function isLowResolution(artwork) {
   return Math.min(404 / artwork.width, 453 / artwork.height) > 1;
 }
 
+function isCurrentSelection(uri) {
+  return selectedItem !== null && selectedItem.uri === uri;
+}
+
+function isAbortError(error) {
+  return Boolean(error && typeof error === "object" && error.name === "AbortError");
+}
+
+function abortActiveRender() {
+  if (activeRenderController) activeRenderController.abort();
+  activeRenderController = null;
+}
+
 function releasePreview() {
   if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
   previewObjectUrl = null;
-  elements.preview.removeAttribute("src");
-  elements.download.removeAttribute("href");
+  previewFilename = null;
+  elements.cardPreview.removeAttribute("src");
+  elements.cardPreview.hidden = true;
 }
 
-function clearStatus() {
-  elements.status.className = "";
-  elements.status.textContent = "";
+function clearSelectionReview() {
+  elements.selectedKind.textContent = "";
+  elements.selectedPrimary.textContent = "";
+  elements.selectedSecondary.textContent = "";
+  elements.selectedUri.textContent = "";
+  elements.selectedSpotifyLink.removeAttribute("href");
+  elements.artworkWarning.hidden = true;
+  elements.resolutionWarning.hidden = true;
 }
 
-function showError(error) {
-  elements.status.className = "error";
-  elements.status.textContent = error instanceof Error ? error.message : "The request failed.";
+function clearDiscoveryStatus() {
+  elements.discoveryStatus.className = "";
+  elements.discoveryStatus.textContent = "";
+}
+
+function clearPreviewStatus() {
+  elements.previewStatus.className = "";
+  elements.previewStatus.textContent = "";
+}
+
+function showDiscoveryError(error) {
+  elements.discoveryStatus.className = "error";
+  elements.discoveryStatus.textContent = errorMessage(error);
+}
+
+function showPreviewError(error) {
+  elements.previewStatus.className = "error";
+  elements.previewStatus.textContent = errorMessage(error);
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : "The request failed.";
 }

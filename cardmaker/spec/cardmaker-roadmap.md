@@ -40,8 +40,8 @@ in [`../findings/spike-validation.md`](../findings/spike-validation.md).
 
 | Area | Spike baseline | Full-concept target | Remaining work | Epic |
 | --- | --- | --- | --- | --- |
-| Download flow | Explicit `Create preview`, followed by `Download PNG` | One action from selection review renders, verifies, and downloads | Remove the intermediate preview action and preserve errors, filenames, and repeat-card flow | CM-1 |
-| Content-type distinction | Type is visible in browser metadata only | Track, album, and playlist cards carry distinct third-line markers | Add the three deterministic geometric markers and visual regression coverage | CM-1 |
+| Download flow | Explicit `Create preview`, followed by `Download PNG` | Selection immediately shows a responsive verified preview; download reuses it | Auto-render on selection and preserve errors, filenames, and repeat-card flow | CM-1 |
+| Content-type distinction | Type is visible in browser metadata only | Track, album, and playlist cards carry distinct bottom-left symbols | Add three refined deterministic symbols and visual regression coverage | CM-1 |
 | Typography and overflow | Packaged DejaVu fonts with deterministic shrink and ellipsis | A settled, compared layout with predictable overflow | Review the current rule against real long labels and either approve it or replace it with one final documented rule | CM-1 |
 | Physical validation | Automated QR and PNG checks pass; manual checklist remains open | Demonstrated live, screen-scanned, printed, laminated cards at a recorded scale | Complete and record the live and physical evidence without inferring scale from DPI | CM-1 |
 | Spotify artwork | Implemented with provenance, containment, and no persistence | Fast default cover source | No material product gap | — |
@@ -58,19 +58,19 @@ in [`../findings/spike-validation.md`](../findings/spike-validation.md).
 Turn the working spike into the smallest complete, physically validated Card Maker
 for Spotify-provided artwork.
 
-### Slice 1: Direct Download and Content-Type Markers
+### Slice 1: Immediate Preview and Content-Type Symbols
 
-- Replace the review screen's `Create preview` action with one primary
-  `Download PNG` action.
-- Render and verify once, then initiate download immediately using the returned PNG
-  and suggested filename.
+- Render and verify immediately after selection and show the returned PNG
+  responsively at up to 50% size in the review screen.
+- Place metadata and actions beside the preview at typical desktop/tablet widths
+  and below it at narrow/mobile widths; download reuses the preview bytes.
 - Keep selection state and errors usable after success or failure so another card
   can be made without restarting the server.
-- Draw the content-type markers as deterministic white geometry at one shared
-  third-line anchor:
-  - album: disc circle
+- Draw the content-type markers as smooth deterministic white geometry at one
+  shared bottom-left anchor:
+  - album: disc with hub and reflection wedge
   - playlist: three stacked dot-dash rows
-  - track: right-pointing play mark with a short heavy dash
+  - track: one enlarged dot-dash row
 - Add renderer, golden-fixture, service, HTTP, and browser-shell coverage for the
   new behavior.
 
@@ -90,7 +90,8 @@ for Spotify-provided artwork.
 
 ### Completion Gate
 
-- The browser has no preview-generation step or second download control.
+- The browser auto-renders one verified preview per selection and performs no
+  second render for download.
 - Each supported Spotify type produces its correct, legible marker without moving
   or shrinking the QR panel.
 - The final overflow behavior is documented and covered by deterministic tests.
@@ -223,7 +224,7 @@ need to be chosen explicitly in the concept.
 1. Complete CM-1 first. It closes the currently observed UX gaps and establishes
    the final card and physical-validation baseline used by every cover source.
 2. Complete CM-2 after CM-1 so upload and generation reuse the accepted renderer,
-   type markers, and direct-download path.
+   type markers, and preview/download path.
 3. CM-3 may start after CM-1 once the host decision is confirmed. It should deploy
    whichever CM-2 features are complete without coupling their implementation to
    the appliance runtime.

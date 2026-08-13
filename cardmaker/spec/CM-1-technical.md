@@ -10,16 +10,16 @@ the current Card Maker spike.
 
 CM-1 keeps the spike's catalog, reference normalization, artwork fetching, QR
 encoding and verification, rendering service, and isolated Flask distribution.
-It changes the adult-facing browser flow from preview-then-download to one direct
-verified download, adds deterministic content-type markers to the locked renderer,
-locks the already approved typography and overflow baseline, and defines how the
-remaining live and physical evidence is recorded.
+It changes the adult-facing browser flow to an immediate verified preview whose
+bytes are reused for download, adds refined bottom-left content-type symbols to the
+locked renderer, locks the already approved typography and overflow baseline, and
+defines how the remaining live and physical evidence is recorded.
 
 The existing
 [`cardmaker-spike-technical.md`](cardmaker-spike-technical.md) remains the design
 record for the implemented spike. This document is the canonical technical design
-for the CM-1 delta and supersedes the spike design where the two-step preview flow
-or provisional marker-free layout is described.
+for the CM-1 delta and supersedes the spike design where the explicit preview
+action or provisional marker-free layout is described.
 
 ## Selected Decisions Carried Into This Design
 
@@ -27,8 +27,8 @@ All CM-1 decision gates are closed:
 
 | Decision | Selected design consequence |
 | --- | --- |
-| D-1 Download interaction | One `Download PNG` action performs one render request, receives the verified PNG, and starts its download. There is no generated preview or second download control. |
-| D-2 Marker set | Album uses a disc circle, playlist uses three stacked dot-dash rows, and track uses a right-pointing play mark followed by a short heavy dash. All are white Pillow geometry. |
+| D-1 Preview/download interaction | Selecting an item performs one render request and displays the verified PNG in a responsive review grid, up to 50% size. `Download PNG` reuses that Blob without a second render. |
+| D-2 Marker set | Album uses a disc with hub/reflection detail, playlist uses three stacked dot-dash rows, and track uses one enlarged dot-dash row. All are smoothly rasterized Pillow geometry at the bottom-left anchor. |
 | D-3 Overflow and width | The canvas remains 1200 x 756. Labels shrink in deterministic two-pixel steps to 20 pixels, then use a single Unicode ellipsis. No wider variant is added. |
 | D-4 Typography and offsets | The packaged DejaVu Sans regular and bold files, 48/42-pixel starting sizes, and current artwork/text offsets are approved and remain locked. |
 | D-5 Physical release gate | Automated completion is necessary but not sufficient. Live Spotify, screen scanner, measured print, lamination, and final scanner evidence must be recorded before CM-1 is complete. |
@@ -36,17 +36,16 @@ All CM-1 decision gates are closed:
 The unchecked alternatives in the requirements are not implementation options.
 In particular, the trailing notes and CM-2 handoff questions that still phrase
 D-3 or D-4 as open are stale relative to the checked decision checklist and the
-user's D-4 approval note. This design follows the checked choices without editing
-the requirements document.
+user's D-4 approval note. This design follows the checked choices.
 
 ## Design Goals
 
 - Implement CM-1 as a small extension of the current spike rather than a package
   rewrite.
 - Preserve one server-side resolution, artwork fetch, render, and independent QR
-  verification per download attempt.
-- Ensure the bytes downloaded by the browser are the bytes returned by that
-  verified render request, with no second render.
+  verification per selection.
+- Ensure the responsive preview and downloaded file use the bytes returned by the
+  same verified render request, with no second render.
 - Keep full Spotify labels, artwork, content type, normalized URI, attribution,
   and entity link visible while a download is attempted or retried.
 - Add type markers without moving or reducing the QR panel, artwork region, label
@@ -62,7 +61,7 @@ the requirements document.
 
 - Uploaded or generated artwork and crop controls.
 - A wider card, alternate layout, theme, or free-form design editor.
-- A rendered-card preview before download.
+- A separate preview-generation action or a second render for download.
 - Batch generation, ZIP, A4, PDF, print calibration, or saved-card state.
 - New Spotify scopes, user authorization, playback control, or library mutation.
 - A frontend framework, browser automation stack, asset build pipeline, or new
@@ -115,7 +114,7 @@ pytest: 86 passed
 
 The current tests cover the domain, adapters, service, HTTP response, renderer,
 golden geometry, exact QR decode, and jukebox URI contract. They do not yet cover
-type-marker pixels or the direct-download browser shell.
+type-marker pixels or the immediate-preview browser shell.
 
 [`../findings/spike-validation.md`](../findings/spike-validation.md) records the
 automated spike findings and correctly labels live Spotify, actual scanner, print,
@@ -123,25 +122,24 @@ and lamination evidence as incomplete.
 
 ## Spec Alignment Notes
 
-### Direct download reuses the existing render boundary
+### Immediate preview reuses the existing render boundary
 
 The server already returns the only render that has passed independent QR
-verification. The two-step behavior exists only because `app.js` retains that
-response as a preview Blob and waits for a second user action.
+verification. CM-1 retains that response as a preview Blob as soon as an item is
+selected, then reuses it when the adult downloads.
 
 CM-1 therefore does not add a second endpoint or move rendering into the browser.
-It changes `/api/render` to an attachment response and changes the one review action
-to consume that response Blob immediately through a temporary download link. The
-route still returns typed JSON on failure, which a plain form submission could not
-present without navigating away from the current selection.
+It changes `/api/render` to an attachment response, displays its Blob through an
+object URL, and gives the same URL to a temporary download link. The route still
+returns typed JSON on failure so the current selection and metadata remain usable.
 
-### Selection review is not a generated-card preview
+### Selection review shows the generated card
 
-FR-1 requires review of the exact unabridged metadata, URI, Spotify artwork,
-content type, attribution, and entity link. It does not require rendering the final
-card before download. The current review section remains that source review. The
-generated preview section and card image are removed; the adult reviews the
-downloaded PNG after the one production action.
+FR-1 requires the final verified card alongside the exact unabridged metadata,
+normalized URI, Spotify attribution/entity link, and controls at typical
+desktop/tablet widths. The same grid stacks metadata below the preview on narrow
+screens. The preview is the exact full-resolution response scaled only by CSS;
+download does not create another card.
 
 ### Physical evidence remains a release gate
 
@@ -169,7 +167,7 @@ FR-8.
 The existing boundaries remain intact:
 
 ```text
-Browser selection review
+Browser item selection
   -> one POST /api/render {uri}
        -> CardMakerService.render(uri)
             -> normalize and re-resolve Spotify entity
@@ -180,8 +178,8 @@ Browser selection review
             -> one lossless PNG serialization in memory
        <- attachment response containing that verified PNG
   -> compare response URI with the reviewed selection
-  -> one temporary Blob URL and synthetic download click
-  -> revoke Blob URL; retain selection and status only
+  -> one retained Blob URL shown responsively, up to 600 x 378
+  -> `Download PNG` reuses that URL; selection/reset revokes it
 
 No relationship is added to the jukebox runtime or process.
 ```
@@ -198,57 +196,55 @@ Search and pasted-reference flows remain unchanged:
 
 1. The adult explicitly searches or resolves a pasted Spotify URL/URI.
 2. The server returns typed catalog metadata.
-3. Selecting an item displays its full primary and optional secondary labels,
-   normalized URI, content type, artwork, Spotify attribution, and entity link.
-4. Missing artwork keeps `Download PNG` disabled and shows the existing honest
-   warning. Low-resolution artwork keeps the existing review warning.
-5. Selecting a different item cancels any in-flight render attempt, releases any
-   temporary Blob URL, clears only download status, and populates the new review.
+3. Selecting an item immediately opens the review, displays its full primary and
+   optional secondary labels, normalized URI, content type, Spotify attribution,
+   and entity link, and starts one render request when artwork is available.
+4. A verified response is shown as the exact card at up to 600 x 378 CSS pixels
+   (50% of 1200 x 756). The review reuses the discovery grid's auto-fit behavior:
+   metadata/actions sit beside the preview at typical desktop/tablet widths and
+   stack below it when the viewport is narrow. Missing artwork keeps download
+   disabled; low-resolution artwork keeps the existing warning.
+5. Selecting a different item cancels any in-flight render, revokes the previous
+   preview URL, clears only preview status, and populates the new review.
 
 Discovery results and input values remain in the page DOM, so a previous success
 or failure does not require a server restart or a repeated search.
 
-### Direct verified download
+### Immediate verified preview and download reuse
 
-The `Download PNG` click handler performs this sequence:
+Selection performs this sequence:
 
 1. Snapshot the selected item's normalized URI and start an `AbortController` for
    this attempt.
-2. Clear the review-scoped status, disable the primary button, and leave the full
+2. Clear the review-scoped status, keep download disabled, and leave the full
    selection visible.
 3. Send exactly one `POST /api/render` request containing only `{ "uri": <selected
    normalized URI> }`.
 4. Let the existing service re-resolve metadata, fetch artwork, render, verify, and
    serialize once. A verification failure returns JSON and no PNG.
-5. Before download, require a successful `image/png` response whose
+5. Before displaying the preview, require a successful `image/png` response whose
    `X-Cardmaker-Spotify-URI` exactly equals both the snapshotted URI and the URI
    still shown by the current selection. Also require the existing width and height
    headers to be `1200` and `756`. A mismatch is treated as a client-visible
-   integrity error and no download starts.
+   integrity error; neither preview nor download becomes available.
 6. Read the response once as a Blob. Derive the local filename from the existing
    `Content-Disposition` parser, falling back to `card.png` only if the header is
    absent or unusable.
-7. Create one temporary object URL for that Blob, attach a temporary `<a download>`
-   element, invoke its click once, then remove the element.
-8. Revoke the object URL on a deferred browser task so the download can consume it.
-   Also retain defensive cleanup on selection change, `Make another`, and
-   `beforeunload`.
-9. Show a concise success status and reveal the secondary `Make another` action.
-   Re-enable `Download PNG` so the adult may deliberately download the same reviewed
-   selection again.
+7. Create one object URL for that Blob, assign it to the preview image, enable
+   `Download PNG`, and retain the suggested filename.
+8. On `Download PNG`, attach a temporary `<a download>` with the retained URL and
+   filename, click it once, and remove the link without another HTTP request.
+9. Revoke the preview URL on selection change, `Make another`, and `beforeunload`.
 
-The browser never calls `/api/render` a second time for the same click and never
-creates a separate preview image. The temporary Blob contains the exact response
-bytes from the verified render request.
+The preview Blob contains the exact response bytes from the verified render
+request, and the browser never calls `/api/render` again for download.
 
 ### Failure and retry
 
 - A classified server failure remains a JSON `{code, message}` response and is
   shown in a new review-scoped live-status element.
-- A network, response-type, dimension, URI-header, Blob, or browser-download setup
-  failure is shown without clearing `selectedItem` or the visible selection.
-- The button is re-enabled after a non-abort failure when the current selection has
-  artwork, allowing a manual retry.
+- A network, response-type, dimension, URI-header, or Blob failure is shown without
+  clearing `selectedItem` or the visible metadata; download remains disabled.
 - Selecting another result or choosing `Make another` aborts an in-flight attempt.
   An expected browser `AbortError` does not overwrite the newly selected item's
   status with a stale failure.
@@ -273,16 +269,16 @@ No server reset, cookie, browser storage, or session endpoint is involved.
 
 | File | CM-1 change |
 | --- | --- |
-| [`../src/cardmaker/adapters/render_pillow.py`](../src/cardmaker/adapters/render_pillow.py) | Extend the frozen geometry with the third-line marker anchor and shape values. Draw the marker selected by `draft.item.reference.kind` after labels. Keep QR, artwork, font, overflow, and canvas behavior unchanged. |
+| [`../src/cardmaker/adapters/render_pillow.py`](../src/cardmaker/adapters/render_pillow.py) | Extend the frozen geometry with the bottom-left symbol anchor and refined shape values. Draw the symbol selected by `draft.item.reference.kind` after labels. Keep QR, artwork, font, overflow, and canvas behavior unchanged. |
 | [`../src/cardmaker/app.py`](../src/cardmaker/app.py) | Return the existing `/api/render` PNG with attachment disposition. Preserve strict request shape, exact response bytes, URI/dimension headers, no-store behavior, and JSON errors. |
-| [`../src/cardmaker/web/templates/index.html`](../src/cardmaker/web/templates/index.html) | Replace `Create preview` with the single `Download PNG` button in the selection review. Add review-scoped live status and a secondary `Make another` action. Remove the generated-preview section, preview image, and second download link. |
-| [`../src/cardmaker/web/static/app.js`](../src/cardmaker/web/static/app.js) | Replace preview Blob state with one direct-download handler, response-integrity checks, deferred object-URL cleanup, abort/stale-selection handling, success state, and repeat-card reset. Keep discovery and full review population unchanged. |
-| [`../src/cardmaker/web/static/style.css`](../src/cardmaker/web/static/style.css) | Remove preview-only rules and style the compact review actions/status. Do not add a framework or build step. |
+| [`../src/cardmaker/web/templates/index.html`](../src/cardmaker/web/templates/index.html) | Keep the preview first in DOM order and group encoded URI, Spotify credits, status, and actions in the adjacent metadata panel. |
+| [`../src/cardmaker/web/static/app.js`](../src/cardmaker/web/static/app.js) | Render on selection, retain one verified preview Blob/filename, reuse it for download, and keep response-integrity, abort/stale-selection, cleanup, and repeat-card handling. |
+| [`../src/cardmaker/web/static/style.css`](../src/cardmaker/web/static/style.css) | Reuse the discovery grid's auto-fit rule so preview and metadata are adjacent at desktop/tablet widths and stacked on narrow screens. Keep the preview responsive and no larger than 50%. |
 | [`../tests/test_renderer.py`](../tests/test_renderer.py) | Add marker coverage for every content type, preserve no-secondary playlist behavior, assert fixed marker bounds, retain overflow tests, and update the approved full-card fixture assertion. |
 | [`../tests/test_golden_geometry.py`](../tests/test_golden_geometry.py) | Freeze the shared marker anchor and assert the original QR/canvas/content anchors are unchanged. The four historical masters remain unchanged. |
 | [`../tests/test_service.py`](../tests/test_service.py) | Exercise verified PNG generation for track, album, and playlist drafts and retain exact decoded URI/no-file behavior. |
-| [`../tests/test_app.py`](../tests/test_app.py) | Assert one `Download PNG` shell action, absence of `Create preview` and the preview section, attachment response semantics, one render call, exact returned bytes, no-store, and preserved error envelopes. |
-| [`../tools/create_approved_fixture.py`](../tools/create_approved_fixture.py) | Generate the same deterministic track fixture with its marker. Preserve the refusal to overwrite an approved fixture silently. |
+| [`../tests/test_app.py`](../tests/test_app.py) | Assert preview-first DOM order and 50% dimensions, one `Download PNG` shell action, attachment response semantics, one render call, Blob reuse, no-store, and preserved error envelopes. |
+| [`../tools/create_approved_fixture.py`](../tools/create_approved_fixture.py) | Generate the same deterministic track fixture with its marker. Preserve the refusal to overwrite an approved fixture unless the explicit `--replace-approved` review flag is passed. |
 | [`../findings/spike-validation.md`](../findings/spike-validation.md) | Record the locked CM-1 geometry and typography, candidate/approved comparison, automated results, live examples, independent decodes, screen scan, print settings, measured dimensions, lamination, and final scan. Leave unavailable evidence unchecked. |
 
 ### Files that do not need runtime changes
@@ -330,36 +326,33 @@ The following current `CardGeometry` values remain unchanged:
 | Secondary draw origin | `(756, 578)`, packaged DejaVu Sans, initial 42 px |
 | Text fitting | Decrease by 2 px to 20 px, then single-line Unicode ellipsis |
 
-The shared marker top is the next 65-pixel line position:
+The shared symbol is bottom-aligned to the locked 40-pixel margin:
 
 ```text
-marker_y = 513 + (2 * 65) = 643
 marker_x = content_x = 756
+marker_y = canvas_height - margin - marker_height = 756 - 40 - 36 = 680
 ```
 
 Every marker is drawn directly by `ImageDraw` in `(255, 255, 255)` on the final
-RGB card. Marker geometry is integer-aligned and not rendered through a font,
-resampled, blurred, or antialiased. Marker drawing occurs only in the content
-column after the QR panel has been pasted.
+RGB card through a 4x grayscale mask reduced with Lanczos for smooth edges. Marker
+drawing occurs only in the content column after the QR panel has been pasted.
 
 ### Exact marker geometry
 
-Coordinates below are inclusive Pillow drawing coordinates. They are the CM-1
-candidate baseline to render side by side before replacing the approved fixture.
+Coordinates below are relative to the 56 x 36 marker box at `(756, 680)`.
 
 | Type | Geometry |
 | --- | --- |
-| Album | One 32 x 32 outlined circle from `(756, 643)` through `(787, 674)`, white outline width 6, black center. |
-| Playlist | Three rows with top coordinates `643`, `654`, and `665`. Each row has a 6 x 6 white dot ellipse from `x = 756` through `761` and a 28 x 6 white rounded dash from `x = 768` through `795`, radius 3. |
-| Track | One filled right-pointing triangle with vertices `(756, 643)`, `(756, 674)`, and `(780, 659)`, followed by a 26 x 12 heavy white dash from `(790, 653)` through `(815, 664)`. |
+| Album | 36-pixel disc with a 3-pixel outline, 10-pixel hub, 4-pixel center hole, and translucent reflection wedge from 300° through 344°. |
+| Playlist | Three 5-pixel dots at relative `y = 7, 19, 31` with 4-pixel rounded lines of widths 30, 34, and 26. |
+| Track | One 10-pixel dot at relative `(1, 13)` followed by a 31 x 5 rounded dash at `(17, 15)`. |
 
-These shapes share `(756, 643)` as their top-left anchor, fit within
-`x = 756..815` and `y = 643..674`, and finish above the locked 40-pixel bottom
-margin boundary at `y = 716`. They do not overlap the maximum-size secondary font
-ink area and leave the QR panel untouched.
+These shapes share `x = 756`, fit within `x = 756..811` and `y = 680..715`, and
+bottom-align immediately above the locked 40-pixel margin. They are separated from
+the maximum-size secondary font ink area and leave the QR panel untouched.
 
 The implementation should use one private renderer helper such as
-`_draw_content_marker(draw, kind, geometry)`. All coordinates and dimensions stay
+`_draw_content_marker(card, kind, geometry)`. All coordinates and dimensions stay
 with the frozen renderer geometry; route and browser code contain no marker
 constants. An unknown kind is an invariant violation and must fail rendering rather
 than silently omit a marker, although `SpotifyReference` already prevents such a
@@ -413,24 +406,28 @@ unexpected error mapping remains unchanged.
 
 - `selectedItem`: the currently reviewed catalog item;
 - `activeRenderController`: the current request cancellation boundary, or `null`;
-- `downloadObjectUrl`: a temporary Blob URL awaiting deferred revocation, or
-  `null`.
+- `previewObjectUrl`: the verified PNG Blob URL currently displayed, or `null`;
+- `previewFilename`: the response's safe suggested filename, or `null`.
 
-There is no preview state. The page does not retain the rendered card after the
-download has been dispatched. The adult's local downloaded file is the output;
-browser and server state remain session-only and in memory.
+The page retains only the current verified preview in browser memory. Selection
+change, reset, and unload revoke its object URL; the server remains in-memory and
+stateless.
 
 ### Review controls
 
 The review contains:
 
+- one generated `<img id="card-preview">` displayed responsively at up to
+  600 x 378 CSS pixels;
+- a metadata/action panel beside it at desktop/tablet widths and below it on narrow
+  screens;
 - one primary `<button id="download-png">Download PNG</button>`;
 - one review-scoped `role="status"`/`aria-live="polite"` element for render and
   verification results; and
-- one secondary `Make another` button revealed after success.
+- one secondary `Make another` button.
 
-There is no `Create preview` text, `preview-section`, generated `<img>`, persistent
-download `<a>`, or second production action in the page shell.
+There is no `Create preview` control, persistent download `<a>`, or second render
+action in the page shell.
 
 ## Configuration and Dependency Design
 
@@ -481,18 +478,18 @@ No analytics, download history, background polling, or automatic retry is added.
 Update [`../tests/test_renderer.py`](../tests/test_renderer.py) to cover:
 
 - exact white-pixel bounds and representative interior/background pixels for the
-  album ring, playlist rows, and track triangle/dash;
-- the shared `(756, 643)` anchor and maximum marker bounds `(815, 674)`;
-- playlist rendering with no secondary label and a marker at the fixed third line;
+  album ring, playlist rows, and single track row;
+- the shared bottom-left anchor with marker box `(756, 680)..(811, 715)`;
+- album hub/reflection detail and smooth deterministic edges;
+- playlist rendering with no secondary label and a marker at the fixed bottom;
 - track and album secondary labels remaining above the marker;
 - identical marker output for repeated controlled inputs;
 - unchanged 1200 x 756 RGB canvas, QR panel, artwork containment, packaged fonts,
   and shrink-then-ellipsis behavior; and
 - pixel equality with the deliberately replaced CM-1 approved fixture.
 
-The current playlist assertion that the whole `y = 570..650` area is empty must be
-narrowed to the secondary-label band because the fixed playlist marker begins at
-`y = 643`.
+The playlist assertion keeps the secondary-label band empty above the fixed
+bottom-left marker.
 
 Update [`../tests/test_golden_geometry.py`](../tests/test_golden_geometry.py) to
 freeze the new marker anchor while retaining every current QR/canvas/content
@@ -518,15 +515,18 @@ does not change.
 Update [`../tests/test_app.py`](../tests/test_app.py) to assert:
 
 - the page contains one `Download PNG` action and `Make another`;
-- the page and script no longer contain `Create preview` or a generated-preview
-  section;
+- the page keeps the preview before encoded URI, Spotify credits, and actions in DOM
+  order;
+- the stylesheet shares one auto-fit grid rule between discovery and review;
+- browser checks cover side-by-side desktop/tablet and stacked narrow/mobile
+  geometry; no `Create preview` control exists;
 - the render response uses attachment disposition, remains `image/png` and
   `no-store`, and returns exactly the stub service bytes;
 - one request results in one `service.render` call;
 - URI and dimension headers remain present;
 - strict JSON shape and all error envelopes remain unchanged; and
-- the browser script retains Blob creation, one programmatic download click,
-  object-URL revocation, and low-resolution review behavior.
+- selection triggers Blob creation once; the download click reuses its object URL;
+- object-URL revocation and low-resolution review behavior remain covered.
 
 CM-1 does not add Node, Playwright, Selenium, or another browser runtime solely for
 this small vanilla-JavaScript delta. The HTTP contract and page shell are automated;
@@ -545,7 +545,7 @@ cd cardmaker
 .venv/bin/python tools/inspect_golden_masters.py
 ```
 
-The approved fixture may change only for the reviewed CM-1 marker addition. No
+The approved fixture may change only for a reviewed CM-1 marker decision. No
 other unexplained pixel difference is accepted.
 
 ## Live and Physical Validation Design
@@ -576,9 +576,8 @@ For at least one full-resolution CM-1 card, record:
 - the actual presentation scanner output; and
 - whether the output matched exactly.
 
-The generated-card preview removed by CM-1 is not required for this test. Display
-the downloaded full-resolution PNG at a known, recorded viewer setting and present
-it to the scanner.
+Display the reviewed card at a known viewer setting and present it to the scanner;
+record whether the actual scanner returns the exact normalized URI.
 
 ### Print, laminate, and scan record
 
@@ -622,9 +621,9 @@ observed result honestly.
    yet.
 3. Change `/api/render` to attachment disposition and update its HTTP tests without
    changing `CardMakerService.render` or its one-render verification sequence.
-4. Replace the preview/download DOM and JavaScript state with the direct-download
-   flow, review-scoped feedback, stale-request protection, deferred Blob cleanup,
-   and `Make another` reset.
+4. Replace the explicit preview action with auto-render on selection, a responsive
+   preview/metadata grid, Blob reuse for download, stale-request protection,
+   cleanup, and `Make another` reset.
 5. Update browser-shell, service, and regression tests. Run ruff, mypy, pytest, and
    the golden inspector.
 6. Compare the three marker candidates and representative short/long labels beside
@@ -644,8 +643,8 @@ observed result honestly.
 
 ## Open Risks
 
-- The fixed marker proportions are visually grounded in the available third-line
-  region but still require the specified side-by-side and physical review before
+- The fixed marker proportions are visually grounded in the bottom-left region but
+  still require the specified side-by-side and physical review before
   the fixture is approved.
 - Some browser security settings may block a programmatic download after an
   asynchronous fetch. The target local browser must be exercised; a failure should

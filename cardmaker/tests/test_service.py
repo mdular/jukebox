@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from cardmaker.adapters.qr_segno import SegnoQrEncoder
 from cardmaker.adapters.qr_zxing import ZxingQrVerifier
-from cardmaker.adapters.render_pillow import PillowCardRenderer
+from cardmaker.adapters.render_pillow import CardGeometry, PillowCardRenderer
 from cardmaker.errors import CardMakerError
-from cardmaker.models import ArtworkReference, CatalogItem, SpotifyReference
+from cardmaker.models import ArtworkReference, CatalogItem, SpotifyKind, SpotifyReference
 from cardmaker.service import MAX_SEARCH_QUERY_LENGTH, CardMakerService, safe_filename
 
 ID = "2takcwOaAZWiXQijPHIx7B"
@@ -63,6 +64,45 @@ def test_render_re_resolves_and_returns_only_verified_png_bytes() -> None:
         assert image.info["dpi"] == pytest.approx((72.009, 72.009), abs=0.001)
         assert ZxingQrVerifier().decode(image.convert("RGB")) == URI
         assert set(image.info) == {"dpi"}
+
+
+@pytest.mark.parametrize(
+    ("kind", "secondary_label", "expected_marker_bounds"),
+    [
+        ("track", "Körperteil Blues", (0, 10, 51, 26)),
+        ("album", "Körperteil Blues", (0, 0, 38, 36)),
+        ("playlist", None, (0, 4, 48, 36)),
+    ],
+)
+def test_render_verifies_png_and_marker_for_every_supported_type_without_files(
+    kind: SpotifyKind,
+    secondary_label: str | None,
+    expected_marker_bounds: tuple[int, int, int, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = make_item(kind=kind, secondary_label=secondary_label)
+    service = make_service(catalog=FixtureCatalog(item))
+    monkeypatch.chdir(tmp_path)
+
+    rendered = service.render(item.reference.uri)
+
+    assert rendered.normalized_uri == item.reference.uri
+    assert (rendered.width, rendered.height) == (1200, 756)
+    with Image.open(BytesIO(rendered.png_bytes)) as image:
+        geometry = CardGeometry()
+        assert image.mode == "RGB"
+        assert image.size == (1200, 756)
+        assert ZxingQrVerifier().decode(image.convert("RGB")) == item.reference.uri
+        assert image.crop(
+            (
+                geometry.marker_x,
+                geometry.marker_y,
+                geometry.marker_x + geometry.marker_max_width,
+                geometry.marker_y + geometry.marker_height,
+            )
+        ).getbbox() == expected_marker_bounds
+    assert tuple(tmp_path.iterdir()) == ()
 
 
 def test_render_blocks_items_without_spotify_artwork() -> None:
@@ -137,13 +177,16 @@ class WrongValueVerifier:
 
 
 def make_item(
-    *, artwork: ArtworkReference | None = ArtworkReference("https://i.scdn.co/a")
+    *,
+    kind: SpotifyKind = "track",
+    secondary_label: str | None = "Körperteil Blues",
+    artwork: ArtworkReference | None = ArtworkReference("https://i.scdn.co/a"),
 ) -> CatalogItem:
-    reference = SpotifyReference("track", ID)
+    reference = SpotifyReference(kind, ID)
     return CatalogItem(
         reference=reference,
         primary_label="Lichterkinder",
-        secondary_label="Körperteil Blues",
+        secondary_label=secondary_label,
         artwork=artwork,
         external_url=reference.external_url,
     )
